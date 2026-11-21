@@ -1,0 +1,25 @@
+{
+    "name": "chat-with-your-docs",
+    "build": { "dockerfile": "Dockerfile" },
+    "features": {
+      "ghcr.io/devcontainers/features/node:2.1": { "version": "26" },
+      "ghcr.io/devcontainers/features/docker-outside-of-docker:1.10": { "moby": false }
+    },
+    "runArgs": ["--add-host=host.docker.internal:host-gateway"],
+    "containerEnv": {
+      "TESTCONTAINERS_HOST_OVERRIDE": "host.docker.internal",
+      "UV_LINK_MODE": "copy"
+    },
+    "forwardPorts": [5173],
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "ms-python.python",
+          "charliermarsh.ruff",
+          "ms-python.mypy-type-checker",
+          "dbaeumer.vscode-eslint"
+        ]
+      }
+    }
+  }
+  

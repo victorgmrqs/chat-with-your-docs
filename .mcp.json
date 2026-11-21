@@ -4,7 +4,7 @@
       "command": "uvx",
       "args": ["postgres-mcp==0.3.0", "--access-mode=restricted"],
       "env": {
-        "DATABASE_URI": "${CWYD_MCP_DATABASE_URI:-postgresql://cwyd_readonly@localhost:5432/cwyd}"
+        "DATABASE_URI": "${CWYD_MCP_DATABASE_URI:-postgresql://cwyd_readonly:cwyd_readonly@localhost:5432/cwyd}"
       }
     },
     "context7": {
