@@ -1,0 +1,29 @@
+---
+paths:
+  - "backend/**/*.py"
+---
+
+# Backend architecture (ports and adapters)
+
+- Layers: `domain` (entities, value objects, rules) → `application` (use cases, ports) →
+  `adapters` (LLM, embeddings, Postgres, parsers) → `api` (FastAPI routers, DTOs).
+  Imports point inward only; `domain` and `application` never import FastAPI, LangChain,
+  SQLAlchemy, provider SDKs or `os.environ`.
+- Ports are `typing.Protocol` classes in `application`: `ChatModelPort`, `EmbeddingPort`,
+  `DocumentRepository`, `RetrieverPort`, `DocumentParserPort`. Adapters implement them.
+- Routes are thin: validate the request DTO, call one use case obtained through `Depends`,
+  map the result to a response DTO. No SQL, LangChain or SDK calls in routers.
+- Wiring lives in a single composition root (`app/composition.py`): settings,
+  engine, adapters, use cases. Model names, providers and flags (`RERANK_ENABLED`) come from
+  settings (pydantic-settings), never hardcoded.
+- Async first: `async def` everywhere I/O happens; blocking SDK or parsing calls run in
+  `asyncio.to_thread` inside the adapter.
+- Background indexing jobs get their own resources from the composition root; they never reuse
+  request-scoped dependencies.
+- Errors: domain raises typed exceptions (`DocumentNotFound`, `UnsupportedFormat`,
+  `InsufficientEvidence`…); one exception handler maps them to HTTP status and a stable error
+  code. Never leak stack traces or provider messages to clients.
+- Observability: one span per pipeline step; attributes carry sizes, counts, scores, model names
+  and token usage, never question, prompt, chunk or answer text.
+- Typing: mypy strict must pass; no `Any` in public signatures; no `# type: ignore` without a
+  reason comment.

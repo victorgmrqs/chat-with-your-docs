@@ -1,0 +1,36 @@
+---
+title: Avoid Barrel File Imports
+impact: CRITICAL
+impactDescription: 200-800ms import cost, slow builds
+tags: bundle, imports, tree-shaking, barrel-files, performance
+---
+
+## Avoid Barrel File Imports
+
+Import directly from source files instead of barrel files to avoid loading thousands of unused modules. **Barrel files** are entry points that re-export multiple modules (e.g., `index.js` that does `export * from './module'`).
+
+Popular icon and component libraries can have **up to 10,000 re-exports** in their entry file. For many React packages, **it takes 200-800ms just to import them**, affecting development speed and build time.
+
+**Why tree-shaking doesn't always help:** Libraries that are pre-bundled or not marked side-effect free can't be fully tree-shaken, and analyzing the entire module graph slows builds and dev startup.
+
+**Incorrect (imports entire library):**
+
+```tsx
+import { Check, X, Menu } from 'lucide-react'
+// Loads 1,583 modules, takes ~2.8s extra in dev
+
+import { Button, TextField } from '@mui/material'
+// Loads 2,225 modules, takes ~4.2s extra in dev
+```
+
+**Correct - Direct imports:**
+
+```tsx
+import Button from '@mui/material/Button'
+import TextField from '@mui/material/TextField'
+// Loads only what you use
+```
+
+> **TypeScript warning:** Some libraries (notably `lucide-react`) don't ship `.d.ts` files for their deep import paths. Importing from `lucide-react/dist/esm/icons/check` resolves to an implicit `any` type, causing errors under `strict` or `noImplicitAny`. Verify the library exports types for its subpaths before using direct imports. In production builds Vite/Rollup tree-shakes ESM libraries that declare `sideEffects: false`, so the barrel cost matters mostly for dev-server startup and for libraries that do not tree-shake well; measure before rewriting imports.
+
+Libraries commonly affected: `lucide-react`, `@mui/material`, `@mui/icons-material`, `@tabler/icons-react`, `react-icons`, `@headlessui/react`, `@radix-ui/react-*`, `lodash`, `ramda`, `date-fns`, `rxjs`, `react-use`.

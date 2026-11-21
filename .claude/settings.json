@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "permissions": {
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * +main)",
+      "Bash(git push *:main)",
+      "Bash(git push * development)",
+      "Bash(git push * +development)",
+      "Bash(git push *:development)",
+      "Bash(git push *--force*)",
+      "Bash(git push -f*)",
+      "Bash(git push * -f*)",
+      "Bash(git * --no-verify*)",
+      "Bash(git reset --hard*)",
+      "Read(**/.env)",
+      "Read(**/.env.local)"
+    ],
+    "ask": [
+      "Bash(uv add *)",
+      "Bash(uv remove *)",
+      "Bash(uvx *)",
+      "Bash(pip *)",
+      "Bash(npm install*)",
+      "Bash(npm i *)",
+      "Bash(npm uninstall*)",
+      "Bash(npx *)"
+    ]
+  }
+}
