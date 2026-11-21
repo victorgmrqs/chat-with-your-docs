@@ -17,6 +17,8 @@ paths:
   first (`npx shadcn add …`).
 - API access only through the typed client generated from the OpenAPI schema
   (openapi-typescript + openapi-fetch); never call `fetch` with hand-written URLs in components.
+  The base path is always the relative `/api` (Vite proxy in dev, nginx in the image); never an
+  absolute URL or a per-environment host.
 - Server state (documents list, indexing polling, chat) is isolated in hooks; components receive
   data and callbacks.
 - Accessibility: semantic elements, labels for every input, visible focus, `aria-live` for

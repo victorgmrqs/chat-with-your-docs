@@ -22,7 +22,6 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]
@@ -30,6 +29,9 @@ select = ["E", "W", "F", "I", "B", "UP", "SIM", "ASYNC", "S", "RUF", "PT"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101"]   # assert is the point of a test
+
+[tool.ruff.lint.isort]
+known-first-party = ["app", "tests"]   # same import order on the host and in the dev container
 
 [tool.mypy]
 python_version = "3.14"

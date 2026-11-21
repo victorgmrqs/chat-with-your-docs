@@ -3,18 +3,7 @@ from collections.abc import Callable
 import pytest
 
 from app.config import Settings
-
-
-def make_settings(database_url: str) -> Settings:
-    return Settings.model_validate(
-        {
-            "database_url": database_url,
-            "chat_provider": "openai",
-            "chat_model": "chat-model-x",
-            "embedding_model": "embedding-model-x",
-            "openai_api_key": "sk-test",
-        }
-    )
+from tests.factories import make_settings
 
 
 @pytest.fixture

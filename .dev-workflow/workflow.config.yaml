@@ -34,19 +34,13 @@ git:
   commit_pattern: "{type}({ticket}): {message}"   # commits and PRs never mention AI (see AGENTS.md)
 
 commands:
-  # TODO(CWYD-2): fill once the monorepo exists. Playbook plan (backend runs via Docker Compose):
-  #   lint:      docker compose exec backend uv run ruff check . && npm --prefix frontend run lint
-  #   typecheck: docker compose exec backend uv run mypy . && npm --prefix frontend run typecheck
-  #   test:      docker compose exec backend uv run pytest && npm --prefix frontend test
-  #   coverage:  (no gate, see quality_gates)
-  #   build:     docker compose build
-  #   e2e:       npm --prefix frontend run e2e   (Playwright)
-  lint: ""
-  typecheck: ""
-  test: ""
-  coverage: ""
-  build: ""
-  e2e: ""
+  # Run from the repository root inside the dev container (dev dependencies are not in the images).
+  lint: "(cd backend && uv run ruff check . && uv run ruff format --check .) && npm --prefix frontend run lint"
+  typecheck: "(cd backend && uv run mypy .) && npm --prefix frontend run typecheck"
+  test: "(cd backend && uv run pytest) && npm --prefix frontend test"
+  coverage: ""                   # no gate, see quality_gates
+  build: "docker compose build"
+  e2e: ""                        # TODO(CWYD-8): Playwright
 
 quality_gates:
   review_pack: python-async      # backend (FastAPI/LangChain) carries most of the risk.
@@ -75,7 +69,16 @@ docs_map:
   - if_diff_touches: "frontend/package.json"
     update: ["README.md"]
     severity: warning
-  # TODO(CWYD-2/CWYD-5): confirm paths once the layout exists. Contract-first rule:
+  - if_diff_touches: "backend/app/config.py"
+    update: [".env.example", "README.md"]   # every setting is documented in both
+    severity: warning
+  - if_diff_touches: "db/**"
+    update: ["README.md"]
+    severity: warning
+  - if_diff_touches: "**/Dockerfile"
+    update: ["README.md"]
+    severity: warning
+  # TODO(CWYD-5): contract-first rule once the API client exists:
   # - if_diff_touches: "backend/app/api/**"
   #   update: ["frontend/src/api/schema.d.ts"]   # regenerate with openapi-typescript
   #   severity: blocker

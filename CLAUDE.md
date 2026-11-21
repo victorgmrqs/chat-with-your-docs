@@ -16,14 +16,15 @@ Architecture: React SPA → FastAPI → PostgreSQL + pgvector, LLMs behind ports
 - Backend: Python, FastAPI + LangChain v1, uv + ruff + mypy strict (`backend/`)
 - Database: PostgreSQL + pgvector (hybrid search: vector + full-text, RRF)
 - LLM: `ChatModelPort` (OpenAI, Anthropic adapters); `EmbeddingPort` (OpenAI)
-- Tests: pytest (real Postgres), Vitest + Testing Library + MSW, Playwright
+- Tests: pytest (real Postgres via testcontainers), Vitest + Testing Library + MSW, Playwright
 - Runtime: Docker Compose is the main validation path
 
 ## Commands
 
 ```bash
-docker compose up        # full stack
-# lint / typecheck / test: see `commands` in .dev-workflow/workflow.config.yaml (CWYD-2)
+docker compose up --build --wait   # full stack: web :8080, API :8000, db :5432
+# lint / typecheck / test (dev container): `commands` in .dev-workflow/workflow.config.yaml;
+# per component: backend/CLAUDE.md, frontend/CLAUDE.md
 ```
 
 ## Non-negotiable constraints

@@ -1,9 +1,8 @@
-
 function App() {
   return (
     <main>
-      <title>Chat With Your Docs</title>
-      <p>Upload documents and ask questions grounded int them.</p>
+      <h1>Chat With Your Docs</h1>
+      <p>Upload documents and ask questions grounded in them.</p>
     </main>
   )
 }

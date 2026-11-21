@@ -2,8 +2,8 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
-from sqlalchemy.exc import InterfaceError, OperationalError
 
+from app.adapters.postgres_readiness import DatabaseUnavailable
 from app.composition import Container
 
 router = APIRouter(tags=["health"], prefix="/health")
@@ -26,7 +26,6 @@ def get_container(request: Request) -> Container:
 @router.get("")
 async def health() -> HealthResponse:
     """Liveness: the process is up. Never touches the database."""
-
     return HealthResponse(status="ok")
 
 
@@ -35,7 +34,7 @@ async def ready(container: Annotated[Container, Depends(get_container)]) -> Read
     """Readiness: the database answers and pgvector is installed."""
     try:
         version = await container.readiness.pgvector_version()
-    except (InterfaceError, OperationalError, OSError) as exc:
+    except DatabaseUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable") from exc
 
     if version is None:

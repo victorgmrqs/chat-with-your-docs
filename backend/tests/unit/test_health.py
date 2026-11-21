@@ -1,7 +1,7 @@
-from app.main import create_app
 from fastapi.testclient import TestClient
 
 from app.config import Settings
+from app.main import create_app
 
 
 def test_health_returns_ok_without_touching_the_database(unreachable_settings: Settings) -> None:

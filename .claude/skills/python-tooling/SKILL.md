@@ -7,6 +7,10 @@ description: Use when managing backend Python dependencies with uv or configurin
 
 - uv is the only package manager; never call pip. Commit `uv.lock`.
 - Type checker is mypy strict. Never ty, never pyright.
+- Python 3.14: ruff `target-version = "py314"`, mypy `python_version = "3.14"`. The real config is
+  `backend/pyproject.toml`; the snippets below are upstream examples.
+- Integration tests get PostgreSQL from testcontainers, not from Docker Compose (this wins over
+  the pytest section below).
 - Test conventions live in `.claude/rules/backend-tests.md`.
 
 # Python Tooling
@@ -64,7 +68,7 @@ backend/tests/
   conftest.py    # shared fixtures
 ```
 
-- Integration tests use the PostgreSQL service from Docker Compose (image `pgvector/pgvector:pg17`); create schema per test session and isolate tests with transactions or truncation. Never SQLite or in-memory databases.
+- Integration tests start PostgreSQL with testcontainers (image `pgvector/pgvector:pg17`, session-scoped); create schema per test session and isolate tests with transactions or truncation. Never SQLite or in-memory databases.
 - Async code is tested with `pytest-asyncio` (`asyncio_mode = "auto"` in `[tool.pytest.ini_options]`); async fixtures for engine and session.
 - LLM and embeddings are replaced by declared fake classes implementing the same port (deterministic output), not ad-hoc patches.
 - At most 3 mocks per test. If a test needs more, the unit under test has too many collaborators or the test belongs at integration level.
@@ -73,7 +77,7 @@ backend/tests/
 
 ```bash
 uv run pytest tests/unit
-uv run pytest tests/integration   # requires the Compose database to be up
+uv run pytest tests/integration   # requires a Docker daemon (testcontainers)
 ```
 
 ## Dependency hygiene

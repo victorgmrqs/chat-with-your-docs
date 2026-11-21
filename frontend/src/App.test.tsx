@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest'
 import App from './App'
 
 describe('App', () => {
-    it('renders the product name as the page heading', () => {
+  it('renders the product name as the page heading', () => {
+    render(<App />)
 
-        render(<App />)
-        expect(
-            screen.getByRole('heading', { level: 1, name: 'Chat With Your Docs'}),
-        ).toBeInTheDocument()
-    })
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Chat With Your Docs' }),
+    ).toBeInTheDocument()
+  })
 })
