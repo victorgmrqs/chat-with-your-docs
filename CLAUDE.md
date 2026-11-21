@@ -16,14 +16,15 @@ Architecture: React SPA → FastAPI → PostgreSQL + pgvector, LLMs behind ports
 - Backend: Python, FastAPI + LangChain v1, uv + ruff + mypy strict (`backend/`)
 - Database: PostgreSQL + pgvector (hybrid search: vector + full-text, RRF)
 - LLM: `ChatModelPort` (OpenAI, Anthropic adapters); `EmbeddingPort` (OpenAI)
-- Tests: pytest (real Postgres), Vitest + Testing Library + MSW, Playwright
+- Tests: pytest (real Postgres via testcontainers), Vitest + Testing Library + MSW, Playwright
 - Runtime: Docker Compose is the main validation path
 
 ## Commands
 
 ```bash
-docker compose up        # full stack
-# lint / typecheck / test: see `commands` in .dev-workflow/workflow.config.yaml (CWYD-2)
+docker compose up --build --wait   # full stack: web :8080, API :8000, db :5432
+# lint / typecheck / test (dev container): `commands` in .dev-workflow/workflow.config.yaml;
+# per component: backend/CLAUDE.md, frontend/CLAUDE.md
 ```
 
 ## Non-negotiable constraints
@@ -46,6 +47,8 @@ docker compose up        # full stack
 - Branches: `feat/CWYD-N-slug` from `development`; release merges `development` → `main`.
   `main` and `development` are protected (PR only, no force push, no deletion); merged feature
   branches are deleted automatically. Never push to them, never `--force`, never `--no-verify`.
+  Merge methods: feature → `development` squash only; release `development` → `main` merge
+  commit only, then tag `vX.Y.Z` on `main`.
 - Configuration: `.dev-workflow/workflow.config.yaml`.
 - Commits and PRs follow `{type}(CWYD-N): message` and never mention AI assistance:
   no agent `Co-Authored-By` trailer and no `Generated with …` line.

@@ -1,0 +1,24 @@
+# CWYD-2 — health endpoints. Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client).
+
+# From inside the dev container the published ports live on the host daemon
+# (docker-outside-of-docker): set @host = host.docker.internal there.
+@host = localhost
+@api = http://{{host}}:8000
+@web = http://{{host}}:8080
+
+### Liveness: 200 {"status":"ok"}; never touches the database
+GET {{api}}/health
+
+### Readiness: 200 {"status":"ready","pgvector":"0.8.7"}
+# 503 {"detail":"database unavailable"} after `docker compose stop db`
+GET {{api}}/health/ready
+
+### Same API through the frontend's nginx proxy (/api prefix stripped): 200 {"status":"ok"}
+GET {{web}}/api/health
+
+### Readiness through the proxy: 200 {"status":"ready","pgvector":"0.8.7"}
+GET {{web}}/api/health/ready
+
+### SPA: 200 text/html with <title>Chat With Your Docs</title>, also for unknown routes
+GET {{web}}/documents/123

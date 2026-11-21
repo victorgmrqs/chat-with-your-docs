@@ -5,7 +5,7 @@
 set -euo pipefail
 
 BASE_BRANCH="${BASE_BRANCH:-development}"
-SRC_PATTERN="${SRC_PATTERN:-^(backend/(app|src)/|frontend/src/)}"   # production code; TODO(CWYD-2): confirm layout
+SRC_PATTERN="${SRC_PATTERN:-^(backend/app/|frontend/src/)}"   # production code
 TEST_PATTERN="${TEST_PATTERN:-(\.test\.|\.spec\.|/tests?/|^(backend|frontend)/(tests?|e2e)/|(^|/)test_[^/]*\.py$)}"
 CHANGELOG="${CHANGELOG:-CHANGELOG.md}"
 

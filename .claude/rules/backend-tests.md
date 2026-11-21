@@ -6,8 +6,13 @@ paths:
 # Backend tests
 
 - pytest + pytest-asyncio. Layout: `tests/unit/` (domain and use cases, fakes only, no I/O) and
-  `tests/integration/` (adapters and API against real PostgreSQL + pgvector from Docker Compose).
+  `tests/integration/` (adapters and API against real PostgreSQL + pgvector).
+- PostgreSQL comes from testcontainers, built from `db/Dockerfile` (`runtime` target, the same
+  init scripts as Compose; session-scoped fixture), not from the Compose stack; tests need a
+  Docker daemon only. Mark them `@pytest.mark.integration`.
 - Never SQLite, never an in-memory database substitute, never mock the database.
+- Fixtures live in `tests/conftest.py`; shared builders and fakes in importable modules
+  (`tests/factories.py`, `tests/fakes.py`). Tests never import from conftest.
 - LLM and embeddings use declared fakes that implement the ports (`FakeChatModel`,
   `FakeEmbeddings` with deterministic vectors). No network calls in the test suite.
 - At most 3 mocks per test; prefer fakes over mocks. Mock only boundaries (providers, clock,
