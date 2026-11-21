@@ -12,6 +12,10 @@ All notable changes to this project are documented here. The format follows
   check (`/health`, `/health/ready`); startup fails fast naming every missing configuration variable;
   one command each for lint, typecheck and test
   ([CWYD-2](https://goncalvesmarques.atlassian.net/browse/CWYD-2)).
+- Document upload and background indexing with chunk provenance and Indexing/Ready/Failed status:
+  `POST /documents` accepts `.pdf`, `.md` and `.txt` up to `MAX_UPLOAD_MB`, re-uploading the same
+  file returns the existing document, and failures say whether to upload another version or retry
+  ([CWYD-3](https://goncalvesmarques.atlassian.net/browse/CWYD-3)).
 
 ### Maintenance
 

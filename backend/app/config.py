@@ -1,6 +1,14 @@
+import uuid
 from typing import Literal, Self
 
-from pydantic import PostgresDsn, SecretStr, ValidationError, field_validator, model_validator
+from pydantic import (
+    Field,
+    PostgresDsn,
+    SecretStr,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
 from pydantic_core import ErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -12,6 +20,13 @@ class Settings(BaseSettings):
     embedding_model: str
     openai_api_key: SecretStr
     anthropic_api_key: SecretStr | None = None
+    max_upload_mb: int = Field(default=10, gt=0)  # DOM-01
+    # Must match the vector(N) column created by migrations/versions/0001 (A5).
+    embedding_dimensions: int = Field(default=1536, gt=0)
+    chunk_size: int = Field(default=1000, gt=0)
+    chunk_overlap: int = Field(default=150, ge=0)
+    # DOM-06: single-owner MVP; the application sets the owner, never the client.
+    default_owner_id: uuid.UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 
@@ -27,6 +42,16 @@ class Settings(BaseSettings):
         if self.chat_provider == "anthropic" and self.anthropic_api_key is None:
             raise ValueError("ANTHROPIC_API_KEY is required when CHAT_PROVIDER=anthropic")
         return self
+
+    @model_validator(mode="after")
+    def _overlap_smaller_than_chunk(self) -> Self:
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
+        return self
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_mb * 1024 * 1024
 
 
 class ConfigurationError(Exception):

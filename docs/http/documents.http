@@ -1,0 +1,97 @@
+# CWYD-3 — document ingestion. Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client), from the repository root.
+# Indexing runs in the background: POST answers 202 `indexing`, then poll GET /documents/{id}
+# until `ready` or `failed`. Fixtures: backend/tests/fixtures/documents (scripts/generate_fixtures.py).
+
+# From inside the dev container set @host = host.docker.internal.
+@host = localhost
+@api = http://{{host}}:8000
+@web = http://{{host}}:8080/api
+
+### document_ingestion_success: 202 {"status":"indexing", "id": ...}
+# @name pdf
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="expense-policy.pdf"
+Content-Type: application/pdf
+
+< ./backend/tests/fixtures/documents/expense-policy.pdf
+--cwyd--
+
+### Poll: 200 {"status":"ready","chunk_count":N} (or "failed" + failure_reason/failure_message)
+GET {{api}}/documents/{{pdf.response.body.id}}
+
+### markdown_and_text: 202, then ready (same for office-handbook.txt)
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="parental-leave-policy.md"
+Content-Type: text/markdown
+
+< ./backend/tests/fixtures/documents/parental-leave-policy.md
+--cwyd--
+
+### unsupported_type: 415 {"code":"unsupported_type","detail":".docx is not supported. Upload a .pdf with selectable text, a .md or a .txt file."}
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="unsupported.docx"
+Content-Type: application/octet-stream
+
+< ./backend/tests/fixtures/documents/unsupported.docx
+--cwyd--
+
+### no_extractable_text: 202, then GET shows failed + "no_extractable_text"
+# @name scanned
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="scanned-notice.pdf"
+Content-Type: application/pdf
+
+< ./backend/tests/fixtures/documents/scanned-notice.pdf
+--cwyd--
+
+### Poll: {"status":"failed","failure_reason":"no_extractable_text","failure_message":"No selectable text was found ..."}
+GET {{api}}/documents/{{scanned.response.body.id}}
+
+### indexing_failure: with an invalid OPENAI_API_KEY (or the provider down) the PDF above ends
+# {"status":"failed","failure_reason":"indexing_failed","failure_message":"... Upload the same file again to retry."}
+# and the backend logs "Indexing failed for document <id>: EmbeddingUnavailable".
+# duplicate_upload: send the first request again (any filename, same bytes):
+# 200 with the same id; an `indexing_failed` document answers 202 and is indexed again.
+
+### Empty file: 400 {"code":"empty_file", ...}
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="empty.txt"
+Content-Type: text/plain
+
+--cwyd--
+
+### List: the owner's documents, newest first
+GET {{api}}/documents
+
+### Database down (`docker compose stop db`): every /documents route answers
+# 503 {"code":"database_unavailable","detail":"database unavailable"}
+
+### Unknown id: 404 {"code":"document_not_found","detail":"Document not found."}
+GET {{api}}/documents/00000000-0000-0000-0000-0000000000ff
+
+### Through the frontend's nginx proxy (/api stripped): 202
+POST {{web}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="office-handbook.txt"
+Content-Type: text/plain
+
+< ./backend/tests/fixtures/documents/office-handbook.txt
+--cwyd--
