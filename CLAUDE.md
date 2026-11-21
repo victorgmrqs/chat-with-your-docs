@@ -46,6 +46,8 @@ docker compose up        # full stack
 - Branches: `feat/CWYD-N-slug` from `development`; release merges `development` → `main`.
   `main` and `development` are protected (PR only, no force push, no deletion); merged feature
   branches are deleted automatically. Never push to them, never `--force`, never `--no-verify`.
+  Merge methods: feature → `development` squash only; release `development` → `main` merge
+  commit only, then tag `vX.Y.Z` on `main`.
 - Configuration: `.dev-workflow/workflow.config.yaml`.
 - Commits and PRs follow `{type}(CWYD-N): message` and never mention AI assistance:
   no agent `Co-Authored-By` trailer and no `Generated with …` line.
