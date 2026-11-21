@@ -1,13 +1,9 @@
 import asyncio
 
 from sqlalchemy import text
-from sqlalchemy.exc import DBAPIError, InterfaceError, OperationalError
-from sqlalchemy.exc import TimeoutError as PoolTimeout
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-
-class DatabaseUnavailable(Exception):
-    """The database cannot be reached, refuses the connection or stops answering."""
+from app.adapters.postgres_connection import DatabaseUnavailable, database_connection
 
 
 class PostgresReadiness:
@@ -20,31 +16,14 @@ class PostgresReadiness:
     async def pgvector_version(self) -> str | None:
         """Installed pgvector version, or None when the extension is missing.
 
-        Raises DatabaseUnavailable when connecting fails (refused, wrong credentials, missing
-        database, server starting up, pool exhausted), when the connection drops during the
-        query, or when the whole check exceeds the timeout. SQL and programming errors propagate.
+        Raises DatabaseUnavailable when the database is unreachable (see database_connection)
+        or the whole check exceeds the timeout. SQL and programming errors propagate.
         """
         try:
-            async with asyncio.timeout(self._timeout):
-                return await self._query_pgvector_version()
+            async with asyncio.timeout(self._timeout), database_connection(self._engine) as conn:
+                version = await conn.scalar(
+                    text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+                )
         except TimeoutError as exc:
             raise DatabaseUnavailable from exc
-
-    async def _query_pgvector_version(self) -> str | None:
-        connection = self._engine.connect()
-        try:
-            await connection.start()
-        except (DBAPIError, OSError, PoolTimeout) as exc:
-            raise DatabaseUnavailable from exc
-        try:
-            version = await connection.scalar(
-                text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
-            )
-        except DBAPIError as exc:
-            lost = isinstance(exc, InterfaceError | OperationalError) or exc.connection_invalidated
-            if lost:
-                raise DatabaseUnavailable from exc
-            raise
-        finally:
-            await connection.close()
         return str(version) if version is not None else None

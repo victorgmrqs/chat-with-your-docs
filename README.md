@@ -38,6 +38,11 @@ Every variable is listed in [`.env.example`](.env.example).
 | `OPENAI_API_KEY`    | yes                            | Embeddings always use OpenAI                    |
 | `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                            |
 | `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
+| `MAX_UPLOAD_MB`     | no (10)                        | Upload size limit; larger files get `413`       |
+| `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration |
+| `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
+| `CHUNK_OVERLAP`     | no (150)                       | Overlap between chunks; smaller than the size   |
+| `DEFAULT_OWNER_ID`  | no                             | Owner of every document (single-user MVP)       |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
 running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at
@@ -59,6 +64,49 @@ curl -s localhost:8080/api/health     # same API through the frontend's nginx pr
 `/health/ready` answers `503` with `database unavailable` or `pgvector extension missing` when
 the dependency is not there. Compose uses it as the backend health check, and the frontend only
 starts once the backend is ready.
+
+## Documents
+
+Upload `.pdf` (with selectable text), `.md` or `.txt` files up to `MAX_UPLOAD_MB`. Indexing runs
+in the background: the upload answers `202` with status `indexing`; poll until `ready` or
+`failed`.
+
+```bash
+curl -s -F file=@backend/tests/fixtures/documents/expense-policy.pdf localhost:8000/documents
+curl -s localhost:8000/documents/<id>   # {"status":"ready","chunk_count":N,...}
+curl -s localhost:8000/documents        # all documents, newest first
+```
+
+- Uploading the same file again returns the existing document (`200`) instead of a copy. A
+  document that failed with `indexing_failed` (temporary: embeddings provider or database
+  unavailable) is indexed again on re-upload (`202`, same id); `no_extractable_text` (for
+  example a scanned PDF) needs another version of the file.
+- Errors use one envelope, `{"code": "...", "detail": "..."}`: `415 unsupported_type`,
+  `413 file_too_large`, `400 empty_file`, `404 document_not_found`, `503 database_unavailable`. Through the frontend proxy
+  (`:8080/api`), nginx accepts bodies up to 11 MB (10 MB plus multipart overhead) and answers
+  larger ones with the same `413 file_too_large` envelope; raise `client_max_body_size` in
+  `frontend/nginx/default.conf.template` together with `MAX_UPLOAD_MB`.
+- A document left `indexing` by a restart is marked `failed` / `indexing_failed` when the API
+  starts; upload it again to retry.
+- Every request in [`docs/http/documents.http`](docs/http/documents.http) can be run against the
+  Compose stack. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-01..06).
+
+### Database schema
+
+Tables and indexes are created by Alembic migrations (`backend/migrations/`). The backend
+container runs `alembic upgrade head` before starting the API; if the migration fails, the
+container exits instead of serving an outdated schema (`docker compose logs backend`). Outside
+Compose, run it yourself from `backend/`:
+
+```bash
+uv run --env-file ../.env alembic upgrade head   # needs DATABASE_URL
+```
+
+The `vector` column size is fixed by the migration (1536) and must match `EMBEDDING_DIMENSIONS`.
+Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS` does not re-embed existing chunks, and
+re-uploading an indexed file returns it unchanged: recreate the database with
+`docker compose down -v` (a dimension change also needs a new migration) and upload the
+documents again.
 
 ## Troubleshooting
 
@@ -82,6 +130,11 @@ env files: `CHAT_PROVIDER=openai # note` sets the whole string. Keep comments on
 **`ports are not available` for 5432, 8000 or 8080.** Another process (a local PostgreSQL, an
 editor port forward) holds the port. Stop it, or change the host side of the mapping in
 `compose.yaml`.
+
+**The backend exits right after start with an Alembic error.** The schema migration runs before
+the API and failed (database unreachable, or a schema changed by hand). `docker compose logs
+backend` shows the cause; for a local database you do not need to keep, `docker compose down -v`
+and start again.
 
 **`pgvector extension missing` after editing `db/init/`.** Init scripts run only on an empty
 volume. Recreate it with `docker compose down -v`.
@@ -117,7 +170,8 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 ## Repository layout
 
 ```
-backend/    FastAPI app (app/{domain,application,adapters,api}), tests, Dockerfile
+backend/    FastAPI app (app/{domain,application,adapters,api}), Alembic migrations, tests and
+            test fixtures (scripts/generate_fixtures.py), Dockerfile
 frontend/   React + Vite SPA, nginx template, Dockerfile
 db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
             by Compose also creates the read-only role for the Postgres MCP server

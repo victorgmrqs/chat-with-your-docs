@@ -1,0 +1,194 @@
+"""The ingestion scenarios through HTTP: real PostgreSQL, declared embedding fakes."""
+
+import asyncio
+import uuid
+from collections.abc import Callable, Iterator
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import create_async_engine
+from testcontainers.community.postgres import PostgresContainer
+
+from app.application.ports import EmbeddingPort
+from app.config import Settings
+from app.main import create_app
+from tests.factories import (
+    EMBEDDING_DIMENSIONS,
+    StoredChunk,
+    fixture_bytes,
+    make_settings,
+    stored_chunks,
+)
+from tests.fakes import FailingEmbeddings, FakeEmbeddings
+
+pytestmark = pytest.mark.integration
+
+ClientFactory = Callable[..., TestClient]
+
+
+@pytest.fixture
+def client_for(postgres: PostgresContainer) -> Iterator[ClientFactory]:
+    """Clients sharing one owner per test (isolation by owner_id, DOM-06)."""
+    owner_id = uuid.uuid4()
+    clients: list[TestClient] = []
+
+    def build(embeddings: EmbeddingPort | None = None, **overrides: Any) -> TestClient:
+        settings = make_settings(
+            postgres.get_connection_url(), default_owner_id=owner_id, **overrides
+        )
+        client = TestClient(
+            create_app(settings, embeddings or FakeEmbeddings(EMBEDDING_DIMENSIONS))
+        )
+        clients.append(client.__enter__())
+        return client
+
+    yield build
+    for client in clients:
+        client.__exit__(None, None, None)
+
+
+def _upload(client: TestClient, filename: str, content: bytes | None = None) -> Any:
+    body = fixture_bytes(filename) if content is None else content
+    return client.post("/documents", files={"file": (filename, body)})
+
+
+def _stored_chunks(postgres: PostgresContainer, document_id: str) -> list[str]:
+    """Database state, not the API view: `filename|page|heading|text` per chunk."""
+
+    async def fetch() -> list[StoredChunk]:
+        engine = create_async_engine(postgres.get_connection_url())
+        try:
+            return await stored_chunks(engine, uuid.UUID(document_id))
+        finally:
+            await engine.dispose()
+
+    # Sync test (TestClient): no event loop is running here.
+    return [
+        f"{c.filename}|{c.page or ''}|{c.heading or ''}|{'text' if c.text else 'EMPTY'}"
+        for c in asyncio.run(fetch())
+    ]
+
+
+def test_document_ingestion_success(client_for: ClientFactory, postgres: PostgresContainer) -> None:
+    client = client_for()
+
+    accepted = [_upload(client, name) for name in ("remote-work-policy.pdf", "expense-policy.pdf")]
+    # TestClient runs background tasks before returning: indexing is already finished.
+    documents = [client.get(f"/documents/{a.json()['id']}").json() for a in accepted]
+
+    assert [a.status_code for a in accepted] == [202, 202]
+    assert [d["status"] for d in documents] == ["ready", "ready"]
+    assert _stored_chunks(postgres, documents[0]["id"]) == [
+        "remote-work-policy.pdf|1||text",
+        "remote-work-policy.pdf|2||text",
+    ]
+    assert _stored_chunks(postgres, documents[1]["id"]) == [
+        "expense-policy.pdf|1||text",
+        "expense-policy.pdf|2||text",
+    ]
+    assert len(client.get("/documents").json()) == 2  # both stay available
+
+
+def test_document_ingestion_markdown_and_text(
+    client_for: ClientFactory, postgres: PostgresContainer
+) -> None:
+    client = client_for()
+
+    markdown = _upload(client, "parental-leave-policy.md").json()
+    text = _upload(client, "office-handbook.txt").json()
+
+    assert (
+        "parental-leave-policy.md||Parental Leave Policy > Eligibility > Full-time employees|text"
+        in (_stored_chunks(postgres, markdown["id"]))
+    )
+    assert _stored_chunks(postgres, text["id"]) == ["office-handbook.txt|||text"]
+
+
+def test_document_ingestion_unsupported_type(client_for: ClientFactory) -> None:
+    response = _upload(client_for(), "unsupported.docx")
+
+    assert response.status_code == 415
+    assert response.json()["code"] == "unsupported_type"
+    assert ".pdf" in response.json()["detail"]
+
+
+def test_document_ingestion_empty_file(client_for: ClientFactory) -> None:
+    response = _upload(client_for(), "empty.txt", b"")
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "empty_file"
+
+
+def test_document_ingestion_file_too_large(client_for: ClientFactory) -> None:
+    response = _upload(client_for(max_upload_mb=1), "big.txt", b"a" * (1024 * 1024 + 1))
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "file_too_large"
+
+
+def test_document_ingestion_no_extractable_text(client_for: ClientFactory) -> None:
+    client = client_for()
+
+    accepted = _upload(client, "scanned-notice.pdf")
+    document = client.get(f"/documents/{accepted.json()['id']}").json()
+
+    assert document["status"] == "failed"
+    assert document["failure_reason"] == "no_extractable_text"
+    assert "selectable text" in document["failure_message"]
+
+
+def test_document_ingestion_indexing_failure(client_for: ClientFactory) -> None:
+    client = client_for(FailingEmbeddings())
+
+    accepted = _upload(client, "expense-policy.pdf")
+    document = client.get(f"/documents/{accepted.json()['id']}").json()
+
+    assert document["status"] == "failed"
+    assert document["failure_reason"] == "indexing_failed"
+    assert "Upload the same file again" in document["failure_message"]
+
+
+def test_document_ingestion_duplicate_upload(client_for: ClientFactory) -> None:
+    client = client_for()
+    first = _upload(client, "remote-work-policy.pdf")
+
+    second = _upload(client, "remote-work-policy-copy.pdf", fixture_bytes("remote-work-policy.pdf"))
+
+    assert second.status_code == 200
+    assert second.json()["id"] == first.json()["id"]
+    assert second.json()["status"] == "ready"
+    assert [d["id"] for d in client.get("/documents").json()] == [first.json()["id"]]
+
+
+def test_document_ingestion_retry_after_indexing_failure(
+    client_for: ClientFactory,
+) -> None:
+    failed = _upload(client_for(FailingEmbeddings()), "expense-policy.pdf").json()
+    client = client_for()
+
+    retried = _upload(client, "expense-policy.pdf")
+    document = client.get(f"/documents/{failed['id']}").json()
+
+    assert retried.status_code == 202
+    assert retried.json()["id"] == failed["id"]
+    assert document["status"] == "ready"
+
+
+def test_document_ingestion_unknown_document(client_for: ClientFactory) -> None:
+    response = client_for().get(f"/documents/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "document_not_found"
+
+
+def test_documents_api_database_unavailable(unreachable_settings: Settings) -> None:
+    app = create_app(unreachable_settings, FakeEmbeddings(EMBEDDING_DIMENSIONS))
+
+    with TestClient(app) as client:  # starts: recovery at startup is best effort
+        listed = client.get("/documents")
+        uploaded = _upload(client, "office-handbook.txt")
+
+    assert listed.status_code == 503
+    assert listed.json() == {"code": "database_unavailable", "detail": "database unavailable"}
+    assert uploaded.status_code == 503

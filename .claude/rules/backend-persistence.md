@@ -23,6 +23,19 @@ paths:
   missing database, server starting up) and connection loss during the query
   (`InterfaceError`, `OperationalError`, `connection_invalidated`) become `DatabaseUnavailable`
   (`from exc`); the whole check is bounded by `asyncio.timeout`. SQL and programming errors
-  (`ProgrammingError`) propagate untouched. The API layer decides the status code.
-- Tables and indexes belong to the schema setup that arrives with CWYD-3, never to
-  `db/init/`, which only holds what must exist before the app (extensions, roles).
+  (`ProgrammingError`) propagate untouched. The API layer decides the status code. Open every
+  connection through `database_connection(engine, transaction=...)` in
+  `app/adapters/postgres_connection.py`, which applies this translation.
+- The engine is created with `hide_parameters=True`: driver errors must not echo bound values
+  (chunk text) into logs.
+- Tables and indexes belong to Alembic revisions in `backend/migrations/versions/`, never to
+  `db/init/`, which only holds what must exist before the app (extensions, roles). Revisions are
+  hand-written (no ORM metadata); never edit an applied one, add a new revision.
+- Adapters declare only the columns they use with `table()` / `column()` (e.g.
+  `column("embedding", Vector())`); the migration stays the single owner of types, constraints
+  and indexes.
+- The `vector(N)` size in the migration must equal `EMBEDDING_DIMENSIONS`. Vector search uses
+  the HNSW index with cosine distance (`vector_cosine_ops`, operator `<=>`); full-text search
+  uses the generated `search_vector` column (`to_tsvector('english', text)`, GIN).
+- Status changes that must be atomic with data (chunks + `ready`, DOM-02) run in one
+  `engine.begin()` block.

@@ -85,3 +85,14 @@ def test_load_settings_unknown_provider_lists_accepted_values(
     assert "CHAT_PROVIDER" in message
     assert "'openai'" in message
     assert "'anthropic'" in message
+
+
+@pytest.mark.usefixtures("valid_env")
+def test_load_settings_rejects_overlap_not_smaller_than_chunk_size(
+    env: pytest.MonkeyPatch,
+) -> None:
+    env.setenv("CHUNK_SIZE", "100")
+    env.setenv("CHUNK_OVERLAP", "100")
+
+    with pytest.raises(ConfigurationError, match="CHUNK_OVERLAP must be smaller than CHUNK_SIZE"):
+        load_settings()

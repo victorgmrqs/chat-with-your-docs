@@ -1,9 +1,10 @@
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 
-from app.adapters.postgres_readiness import DatabaseUnavailable
+from app.adapters.postgres_connection import DatabaseUnavailable
+from app.api.dependencies import get_container
 from app.composition import Container
 
 router = APIRouter(tags=["health"], prefix="/health")
@@ -20,11 +21,6 @@ class ReadinessResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
-
-
-def get_container(request: Request) -> Container:
-    container: Container = request.app.state.container
-    return container
 
 
 @router.get("")

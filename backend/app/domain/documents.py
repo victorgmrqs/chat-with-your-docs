@@ -1,0 +1,176 @@
+"""Documents, chunks and the ingestion rules (DOM-01..06 in docs/domain-context.md)."""
+
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from enum import StrEnum
+from pathlib import PurePath
+
+MAX_FILENAME_LENGTH = 255  # documents.filename column
+MAX_SUFFIX_LENGTH = 10
+
+ACCEPTED_FORMATS_HINT = "Upload a .pdf with selectable text, a .md or a .txt file."
+
+
+class DocumentFormat(StrEnum):
+    PDF = "pdf"
+    MARKDOWN = "md"
+    TEXT = "txt"
+
+
+class DocumentStatus(StrEnum):
+    INDEXING = "indexing"
+    READY = "ready"
+    FAILED = "failed"
+
+
+class FailureReason(StrEnum):
+    NO_EXTRACTABLE_TEXT = "no_extractable_text"  # permanent
+    INDEXING_FAILED = "indexing_failed"  # transient: a re-upload indexes again
+
+
+FAILURE_MESSAGES: dict[FailureReason, str] = {  # DOM-03: distinct, actionable messages
+    FailureReason.NO_EXTRACTABLE_TEXT: (
+        "No selectable text was found (for example a scanned PDF). "
+        "Upload another version with selectable text."
+    ),
+    FailureReason.INDEXING_FAILED: (
+        "Indexing failed for a temporary reason. Upload the same file again to retry."
+    ),
+}
+
+
+class DomainError(Exception):
+    """Base for business errors; `code` is the stable identifier exposed by the API."""
+
+    code = "domain_error"
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message)
+        self.message = message
+
+
+class UnsupportedFormat(DomainError):
+    code = "unsupported_type"
+
+
+class FileTooLarge(DomainError):
+    code = "file_too_large"
+
+
+class EmptyFile(DomainError):
+    code = "empty_file"
+
+
+class DocumentNotFound(DomainError):
+    code = "document_not_found"
+
+    def __init__(self, message: str = "Document not found.") -> None:
+        super().__init__(message)
+
+
+class NoExtractableText(DomainError):
+    code = FailureReason.NO_EXTRACTABLE_TEXT.value
+
+
+@dataclass(frozen=True, slots=True)
+class Document:
+    id: uuid.UUID
+    owner_id: uuid.UUID
+    filename: str
+    format: DocumentFormat
+    sha256: str
+    size_bytes: int
+    status: DocumentStatus
+    failure_reason: FailureReason | None
+    chunk_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    @property
+    def failure_message(self) -> str | None:
+        return FAILURE_MESSAGES[self.failure_reason] if self.failure_reason else None
+
+    @property
+    def can_retry(self) -> bool:
+        """DOM-04: only transient failures are indexed again on re-upload."""
+
+        return self.failure_reason is FailureReason.INDEXING_FAILED
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    """A piece of extracted text and where it came from (page or heading path)."""
+
+    text: str
+    page: int | None = None
+    heading: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class Chunk:
+    id: uuid.UUID
+    document_id: uuid.UUID
+    owner_id: uuid.UUID
+    index: int
+    text: str
+    filename: str
+    page: int | None
+    heading: str | None
+
+    @property
+    def embedding_text(self) -> str:
+        """DOM-05: provenance header for the embedding; `text` itself stays original."""
+
+        location = f"Page {self.page}" if self.page else self.heading
+        header = f"File: {self.filename}" + (f" | {location}" if location else "")
+
+        return f"{header}\n\n{self.text}"
+
+
+def build_chunks(document: Document, sections: list[Section]) -> list[Chunk]:
+    """DOM-05: identity and provenance for each piece returned by the splitter."""
+    return [
+        Chunk(
+            id=chunk_id(document.id, index),
+            document_id=document.id,
+            owner_id=document.owner_id,  # DOM-06
+            index=index,
+            text=section.text,
+            filename=document.filename,
+            page=section.page,
+            heading=section.heading,
+        )
+        for index, section in enumerate(sections)
+    ]
+
+
+def chunk_id(document_id: uuid.UUID, index: int) -> uuid.UUID:
+    """DOM-05: stable and unique across documents."""
+    return uuid.uuid5(document_id, f"chunk:{index}")
+
+
+def clean_filename(filename: str) -> str:
+    """Keep only the base name: clients may send full or relative paths.
+
+    Names longer than the 255-character column keep their extension (DOM-01).
+    """
+    name = PurePath(filename.replace("\\", "/")).name or "unnamed"
+    if len(name) <= MAX_FILENAME_LENGTH:
+        return name
+    suffix = PurePath(name).suffix
+    if len(suffix) > MAX_SUFFIX_LENGTH:  # not a real extension: plain truncation
+        suffix = ""
+    return name[: MAX_FILENAME_LENGTH - len(suffix)] + suffix
+
+
+def detect_format(filename: str) -> DocumentFormat:
+    """DOM-01: the extension decides the format; anything else is rejected with guidance."""
+
+    suffix = PurePath(filename).suffix.lower().removeprefix(".")
+
+    try:
+        return DocumentFormat(suffix)
+    except ValueError:
+        shown = f".{suffix}" if suffix else "Files without an extension"
+        raise UnsupportedFormat(f"{shown} is not supported. {ACCEPTED_FORMATS_HINT}") from None

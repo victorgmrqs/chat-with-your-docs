@@ -3,10 +3,20 @@ server {
     root /usr/share/nginx/html;
 
     location /api/ {
+        # Uploads: nginx defaults to 1 MB. MAX_UPLOAD_MB (10) plus multipart overhead;
+        # the backend answers 413 file_too_large with the {code, detail} envelope.
+        client_max_body_size 11m;
+        error_page 413 = @upload_too_large;
         proxy_pass ${BACKEND_URL}/;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Same {code, detail} envelope as the API when nginx itself rejects the body.
+    location @upload_too_large {
+        default_type application/json;
+        return 413 '{"code":"file_too_large","detail":"The file is too large. Upload a smaller file."}';
     }
 
     location /assets/ {

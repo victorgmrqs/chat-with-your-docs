@@ -1,0 +1,212 @@
+import hashlib
+import uuid
+
+import pytest
+
+from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
+from app.application.ingestion import IngestionService
+from app.application.ports import EmbeddingPort
+from app.domain.documents import (
+    Document,
+    DocumentNotFound,
+    DocumentStatus,
+    EmptyFile,
+    FailureReason,
+    FileTooLarge,
+    UnsupportedFormat,
+)
+from tests.factories import fixture_bytes
+from tests.fakes import FailingEmbeddings, FakeEmbeddings, InMemoryDocumentRepository
+
+OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def _service(
+    repository: InMemoryDocumentRepository,
+    embeddings: EmbeddingPort | None = None,
+    max_upload_bytes: int = MAX_UPLOAD_BYTES,
+) -> IngestionService:
+    # Parser and splitter are the real, in-process adapters: deterministic, no I/O.
+    return IngestionService(
+        repository,
+        DocumentParserAdapter(),
+        RecursiveTextSplitter(chunk_size=500, chunk_overlap=50),
+        embeddings or FakeEmbeddings(8),
+        max_upload_bytes=max_upload_bytes,
+    )
+
+
+async def _upload_and_index(service: IngestionService, filename: str) -> Document:
+    content = fixture_bytes(filename)
+    result = await service.upload(OWNER, filename, content)
+    await service.index(result.document, content)
+    return await service.get(OWNER, result.document.id)
+
+
+async def test_upload_registers_a_new_document_for_indexing() -> None:
+    repository = InMemoryDocumentRepository()
+    content = fixture_bytes("expense-policy.pdf")
+
+    result = await _service(repository).upload(OWNER, "C:\\docs\\expense-policy.pdf", content)
+
+    assert result.needs_indexing is True
+    assert result.document.status is DocumentStatus.INDEXING
+    assert result.document.filename == "expense-policy.pdf"
+    assert result.document.sha256 == hashlib.sha256(content).hexdigest()
+    assert result.document.owner_id == OWNER
+
+
+async def test_upload_unsupported_type_raises() -> None:
+    service = _service(InMemoryDocumentRepository())
+
+    with pytest.raises(UnsupportedFormat):
+        await service.upload(OWNER, "unsupported.docx", fixture_bytes("unsupported.docx"))
+
+
+async def test_upload_empty_file_raises() -> None:
+    with pytest.raises(EmptyFile):
+        await _service(InMemoryDocumentRepository()).upload(OWNER, "empty.txt", b"")
+
+
+async def test_upload_file_too_large_raises() -> None:
+    service = _service(InMemoryDocumentRepository(), max_upload_bytes=10)
+
+    with pytest.raises(FileTooLarge):
+        await service.upload(OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt"))
+
+
+async def test_upload_duplicate_returns_the_existing_document_without_indexing() -> None:
+    service = _service(InMemoryDocumentRepository())
+    ready = await _upload_and_index(service, "office-handbook.txt")
+
+    result = await service.upload(OWNER, "copy.txt", fixture_bytes("office-handbook.txt"))
+
+    assert result.needs_indexing is False
+    assert result.document == ready
+
+
+async def test_upload_duplicate_after_a_transient_failure_indexes_again() -> None:
+    repository = InMemoryDocumentRepository()
+    failed = await _upload_and_index(
+        _service(repository, FailingEmbeddings()), "office-handbook.txt"
+    )
+
+    result = await _service(repository).upload(
+        OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt")
+    )
+
+    assert result.needs_indexing is True
+    assert result.document.id == failed.id
+    assert result.document.status is DocumentStatus.INDEXING
+    assert result.document.failure_reason is None
+
+
+async def test_upload_duplicate_without_extractable_text_is_returned_as_is() -> None:
+    service = _service(InMemoryDocumentRepository())
+    failed = await _upload_and_index(service, "scanned-notice.pdf")
+
+    result = await service.upload(OWNER, "scanned-notice.pdf", fixture_bytes("scanned-notice.pdf"))
+
+    assert result.needs_indexing is False
+    assert result.document == failed
+
+
+async def test_index_pdf_stores_chunks_with_pages_and_marks_ready() -> None:
+    repository = InMemoryDocumentRepository()
+
+    document = await _upload_and_index(_service(repository), "remote-work-policy.pdf")
+
+    assert document.status is DocumentStatus.READY
+    assert document.chunk_count == len(repository.chunks[document.id]) > 0
+    assert {chunk.page for chunk in repository.chunks[document.id]} == {1, 2}
+
+
+@pytest.mark.parametrize("filename", ["parental-leave-policy.md", "office-handbook.txt"])
+async def test_index_markdown_and_text_marks_ready(filename: str) -> None:
+    document = await _upload_and_index(_service(InMemoryDocumentRepository()), filename)
+
+    assert document.status is DocumentStatus.READY
+    assert document.chunk_count > 0
+
+
+async def test_index_without_extractable_text_fails_permanently() -> None:
+    document = await _upload_and_index(_service(InMemoryDocumentRepository()), "scanned-notice.pdf")
+
+    assert document.status is DocumentStatus.FAILED
+    assert document.failure_reason is FailureReason.NO_EXTRACTABLE_TEXT
+    assert document.can_retry is False
+
+
+async def test_index_embedding_failure_fails_transiently() -> None:
+    document = await _upload_and_index(
+        _service(InMemoryDocumentRepository(), FailingEmbeddings()), "expense-policy.pdf"
+    )
+
+    assert document.status is DocumentStatus.FAILED
+    assert document.failure_reason is FailureReason.INDEXING_FAILED
+    assert document.can_retry is True
+
+
+async def test_get_document_of_another_owner_raises_not_found() -> None:
+    service = _service(InMemoryDocumentRepository())
+    result = await service.upload(
+        OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt")
+    )
+
+    with pytest.raises(DocumentNotFound):
+        await service.get(uuid.uuid4(), result.document.id)
+
+
+async def test_list_for_owner_returns_the_owner_documents() -> None:
+    service = _service(InMemoryDocumentRepository())
+    result = await service.upload(
+        OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt")
+    )
+    await service.upload(uuid.uuid4(), "office-handbook.txt", fixture_bytes("office-handbook.txt"))
+
+    assert await service.list_for_owner(OWNER) == [result.document]
+
+
+async def test_recover_interrupted_fails_documents_left_indexing() -> None:
+    service = _service(InMemoryDocumentRepository())
+    result = await service.upload(
+        OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt")
+    )
+
+    recovered = await service.recover_interrupted()
+
+    document = await service.get(OWNER, result.document.id)
+    assert recovered == 1
+    assert document.status is DocumentStatus.FAILED
+    assert document.failure_reason is FailureReason.INDEXING_FAILED
+
+
+async def test_upload_retry_already_started_is_not_scheduled_twice() -> None:
+    repository = InMemoryDocumentRepository()
+    content = fixture_bytes("office-handbook.txt")
+    await _upload_and_index(_service(repository, FailingEmbeddings()), "office-handbook.txt")
+    service = _service(repository)
+    first = await service.upload(OWNER, "office-handbook.txt", content)
+
+    second = await service.upload(OWNER, "office-handbook.txt", content)
+
+    assert first.needs_indexing is True
+    assert second.needs_indexing is False
+    assert second.document.status is DocumentStatus.INDEXING
+
+
+class _RepositoryDownAfterUpload(InMemoryDocumentRepository):
+    async def mark_failed(self, document_id: uuid.UUID, reason: FailureReason) -> None:
+        raise ConnectionError("database went away")
+
+
+async def test_index_failure_that_cannot_be_recorded_does_not_raise() -> None:
+    repository = _RepositoryDownAfterUpload()
+    service = _service(repository, FailingEmbeddings())
+    content = fixture_bytes("office-handbook.txt")
+    result = await service.upload(OWNER, "office-handbook.txt", content)
+
+    await service.index(result.document, content)  # background job: must not raise
+
+    assert repository.documents[result.document.id].status is DocumentStatus.INDEXING
