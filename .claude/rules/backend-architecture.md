@@ -13,6 +13,8 @@ paths:
   `DocumentRepository`, `RetrieverPort`, `DocumentParserPort`. Adapters implement them.
 - Routes are thin: validate the request DTO, call one use case obtained through `Depends`,
   map the result to a response DTO. No SQL, LangChain or SDK calls in routers.
+  Exception: infrastructure probes (`/health*`) have no business logic and call their adapter
+  (`container.readiness`) directly; they still go through `Depends` and never touch SQL.
 - Wiring lives in a single composition root (`app/composition.py`): settings,
   engine, adapters, use cases. Model names, providers and flags (`RERANK_ENABLED`) come from
   settings (pydantic-settings), never hardcoded.

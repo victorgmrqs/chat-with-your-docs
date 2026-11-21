@@ -9,8 +9,8 @@
 - Mapping: rows → domain types (`str | None`, entities), never `Row` leaking out.
 - Isolation of tenants: a query never returns another owner's rows.
 - Absence: missing rows return `None`/empty, not an exception (or the declared domain error).
-- Connection failures surface as `DatabaseUnavailable` (unreachable port, wrong credentials),
-  SQL errors do not.
+- Connection failures surface as `DatabaseUnavailable` (unreachable port, wrong credentials,
+  timeout), SQL errors do not.
 
 ## Layer assignment
 - **Integration only.** No unit tests with a mocked engine or session.

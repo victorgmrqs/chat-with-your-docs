@@ -1,6 +1,6 @@
 from typing import Literal, Self
 
-from pydantic import PostgresDsn, SecretStr, ValidationError, model_validator
+from pydantic import PostgresDsn, SecretStr, ValidationError, field_validator, model_validator
 from pydantic_core import ErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -14,6 +14,13 @@ class Settings(BaseSettings):
     anthropic_api_key: SecretStr | None = None
 
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
+
+    @field_validator("database_url")
+    @classmethod
+    def _require_async_driver(cls, url: PostgresDsn) -> PostgresDsn:
+        if url.scheme != "postgresql+asyncpg":
+            raise ValueError("must use the postgresql+asyncpg:// scheme (async driver)")
+        return url
 
     @model_validator(mode="after")
     def _require_provider_key(self) -> Self:

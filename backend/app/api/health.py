@@ -18,6 +18,10 @@ class ReadinessResponse(BaseModel):
     pgvector: str
 
 
+class ErrorResponse(BaseModel):
+    detail: str
+
+
 def get_container(request: Request) -> Container:
     container: Container = request.app.state.container
     return container
@@ -29,7 +33,15 @@ async def health() -> HealthResponse:
     return HealthResponse(status="ok")
 
 
-@router.get("/ready")
+@router.get(
+    "/ready",
+    responses={
+        status.HTTP_503_SERVICE_UNAVAILABLE: {
+            "model": ErrorResponse,
+            "description": "`database unavailable` or `pgvector extension missing`",
+        }
+    },
+)
 async def ready(container: Annotated[Container, Depends(get_container)]) -> ReadinessResponse:
     """Readiness: the database answers and pgvector is installed."""
     try:

@@ -17,8 +17,9 @@
   if a marker is ever needed (auto mode makes it unnecessary).
 - **SQL string literals.** `WHERE extname = "vector"` is an identifier and raises
   `ProgrammingError`; use single quotes or bound parameters. A broad `except` in the code under
-  test would hide this as a 503, which is why adapters translate only failures while connecting into
-  `DatabaseUnavailable`; query errors propagate.
+  test would hide this as a 503, which is why adapters translate only connection failures (at
+  connect, or the connection dropping mid-query) and timeouts into `DatabaseUnavailable`; SQL
+  errors propagate.
 - **asyncpg connection errors are not all `OperationalError`.** Wrong password, missing database
   and "starting up" arrive as plain `DBAPIError`; catch the connect step, not the error class.
 - **mypy cannot check engine keyword arguments** (`create_async_engine(**kwargs: Any)`): a typo

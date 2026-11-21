@@ -101,7 +101,7 @@ extension.
 $ (cd backend && uv run ruff check . && uv run ruff format --check .) && npm --prefix frontend run lint   # exit 0
 $ (cd backend && uv run mypy .) && npm --prefix frontend run typecheck                                   # exit 0
 $ (cd backend && uv run pytest) && npm --prefix frontend test
-10 passed, 1 warning         # backend: unit + testcontainers integration
+12 passed, 1 warning         # backend: unit + testcontainers integration (after PR #2 review fixes)
 Tests  1 passed (1)          # frontend
 ```
 

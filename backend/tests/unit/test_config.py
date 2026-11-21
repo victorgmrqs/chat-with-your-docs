@@ -53,6 +53,17 @@ def test_load_settings_empty_variable_counts_as_missing(valid_env: pytest.Monkey
     assert "OPENAI_API_KEY" in str(exc_info.value)
 
 
+def test_load_settings_rejects_a_sync_database_url(valid_env: pytest.MonkeyPatch) -> None:
+    valid_env.setenv("DATABASE_URL", "postgresql://cwyd:cwyd@localhost:5432/cwyd")
+
+    with pytest.raises(ConfigurationError) as exc_info:
+        load_settings()
+
+    message = str(exc_info.value)
+    assert "DATABASE_URL" in message
+    assert "postgresql+asyncpg://" in message
+
+
 def test_load_settings_anthropic_provider_requires_its_key(valid_env: pytest.MonkeyPatch) -> None:
     valid_env.setenv("CHAT_PROVIDER", "anthropic")
 

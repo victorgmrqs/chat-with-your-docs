@@ -19,9 +19,10 @@ paths:
   identifier and fails with `ProgrammingError`.
 - Adapters return domain types or plain values (`str | None`), never `Row` or `Result`
   objects.
-- Failures while connecting (`DBAPIError`, `OSError`, timeout: refused, wrong credentials,
-  missing database, server starting up) become `DatabaseUnavailable` (`from exc`); connecting
-  is bounded by a timeout. Errors from the query itself (SQL, programming) propagate untouched.
-  The API layer decides the status code.
+- Failures while connecting (`DBAPIError`, `OSError`, pool timeout: refused, wrong credentials,
+  missing database, server starting up) and connection loss during the query
+  (`InterfaceError`, `OperationalError`, `connection_invalidated`) become `DatabaseUnavailable`
+  (`from exc`); the whole check is bounded by `asyncio.timeout`. SQL and programming errors
+  (`ProgrammingError`) propagate untouched. The API layer decides the status code.
 - Tables and indexes belong to the schema setup that arrives with CWYD-3, never to
   `db/init/`, which only holds what must exist before the app (extensions, roles).

@@ -40,7 +40,13 @@ Every variable is listed in [`.env.example`](.env.example).
 | `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
-running the API outside Compose.
+running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at
+startup). Keep `POSTGRES_*` URL-safe (letters, digits, `-`, `_`, `.`): they are inserted into
+the URL as is.
+
+`POSTGRES_*` take effect only when the database volume is created. After changing them, recreate
+it with `docker compose down -v` (this deletes the local data), or the backend keeps failing
+authentication against the old credentials.
 
 ## Health check
 
@@ -92,7 +98,7 @@ uv run ruff check . && uv run ruff format --check .   # lint
 uv run mypy .                                          # typecheck (strict)
 uv run pytest                                          # unit + integration (testcontainers)
 uv run pytest -m "not integration"                     # fast loop without Docker
-uv run uvicorn app.main:app --reload                   # API on :8000 (needs the env vars)
+uv run --env-file ../.env uvicorn app.main:app --reload  # API on :8000; uv loads ../.env, the app does not
 
 # frontend/
 npm run lint && npm run typecheck && npm test
@@ -102,7 +108,11 @@ npm run dev                                            # Vite on :5173, /api →
 Integration tests build `db/Dockerfile` and start it with testcontainers, so they need a Docker
 daemon but not the Compose stack. To run the API outside Compose, set `DATABASE_URL` (see
 `.env.example`). From the dev container, the Compose services are reached at
-`host.docker.internal`, e.g. `BACKEND_URL=http://host.docker.internal:8000 npm run dev`.
+`host.docker.internal`, e.g. `BACKEND_URL=http://host.docker.internal:8000 npm run dev`. This
+works on Docker Desktop (macOS, Windows/WSL), which forwards `host.docker.internal` to the host
+loopback. On native Linux Docker Engine it resolves to the bridge gateway, which cannot reach
+ports bound to `127.0.0.1`: run the Vite dev server on the host, or bind the ports you need to
+the gateway address in a local `compose.override.yaml` (never commit it).
 
 ## Repository layout
 
