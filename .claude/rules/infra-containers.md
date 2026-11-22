@@ -10,7 +10,7 @@ paths:
 # Containers and local stack
 
 - Base images use an explicit version tag (`python:3.14-slim-trixie`, `node:26-alpine`,
-  `nginxinc/nginx-unprivileged:1.30-alpine`, `pgvector/pgvector:pg17`, `uv:0.13.7`); never
+  `nginxinc/nginx-unprivileged:1.31-alpine`, `pgvector/pgvector:pg17`, `uv:0.13.7`); never
   `latest` or a bare name.
 - Runtime images run as a non-root user (backend uid 10001, nginx-unprivileged on 8080).
   Multi-stage builds: build tools and dev dependencies never reach the final stage
