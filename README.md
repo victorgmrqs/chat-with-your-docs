@@ -54,6 +54,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `CHAT_TIMEOUT_SECONDS` | no (30)                     | Per-attempt chat provider timeout               |
 | `CHAT_MAX_RETRIES`  | no (2)                         | Retries on timeouts, 429 and 5xx                |
 | `CHAT_TEMPERATURE`  | no (unset)                     | Sent only when set; some models reject it       |
+| `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
 running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at
@@ -154,6 +155,29 @@ Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS` does not re-embed existing 
 re-uploading an indexed file returns it unchanged: recreate the database with
 `docker compose down -v` (a dimension change also needs a new migration) and upload the
 documents again.
+
+## RAG quality
+
+A golden dataset of 13 questions over the fixture documents measures retrieval hit@k, rank (MRR),
+correct refusals, citation validity, latency and chat cost for several configurations:
+
+```bash
+docker compose --profile eval run --build --rm eval    # with the stack up; reports land in docs/eval/
+```
+
+| Configuration | MRR | Refusals | Citation validity | p50 latency | Chat cost |
+|---|---|---|---|---|---|
+| baseline (defaults) | 0.93 | 100% | 100% | 1.4 s | $0.0020 |
+| reranker on | 0.93 | 100% | 100% | 2.3 s | $0.0032 |
+| chunks of 120/20 | 0.77 | 100% | 78% | 1.5 s | $0.0020 |
+| `MIN_RELEVANCE` 0.45 | 0.93 | 100% | 100% | 1.4 s | $0.0020 |
+
+The defaults stay: the reranker adds cost and latency without changing any outcome, smaller
+chunks split the evidence, and a stricter relevance floor changes nothing because unrelated
+questions are already refused before the chat model is called. Each configuration starts from
+the code defaults of the RAG settings, not from the local `.env`, so runs are comparable. Method,
+metrics and limits: [`docs/eval/README.md`](docs/eval/README.md). Business rules:
+[`docs/domain-context.md`](docs/domain-context.md) (DOM-20, DOM-21).
 
 ## Troubleshooting
 
@@ -287,7 +311,7 @@ Third-party actions are pinned by commit SHA.
 ```
 backend/    FastAPI app (app/{domain,application,adapters,api}), Alembic migrations, tests and
             test fixtures (scripts/generate_fixtures.py), OpenAPI export
-            (scripts/export_openapi.py), Dockerfile
+            (scripts/export_openapi.py), RAG evaluation (eval/), Dockerfile
 frontend/   React + Vite SPA (src/components, src/hooks, src/api with the generated schema,
             src/mocks for MSW, src/styles/theme.css), openapi.json, token scripts
             (scripts/tokens), dev-only design preview (preview.html), nginx template, Dockerfile

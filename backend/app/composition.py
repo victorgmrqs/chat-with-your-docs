@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
@@ -11,7 +12,7 @@ from app.adapters.postgres_readiness import PostgresReadiness
 from app.adapters.postgres_retriever import PostgresRetriever
 from app.application.answering import AnsweringLimits, AnswerQuestion
 from app.application.ingestion import IngestionService
-from app.application.ports import ChatModelPort, EmbeddingPort
+from app.application.ports import ChatModelPort, EmbeddingPort, RetrieverPort
 from app.application.reranking import LLMReranker
 from app.config import Settings
 
@@ -49,8 +50,13 @@ def build_container(
     settings: Settings,
     embeddings: EmbeddingPort | None = None,
     chat: ChatModelPort | None = None,
+    wrap_retriever: Callable[[RetrieverPort], RetrieverPort] | None = None,
 ) -> Container:
-    """`embeddings` and `chat` replace the provider adapters in tests (declared fakes)."""
+    """`embeddings` and `chat` replace the provider adapters in tests (declared fakes).
+
+    `wrap_retriever` decorates the retriever, e.g. so the RAG evaluation can record what
+    retrieval returned for each question (CWYD-11).
+    """
     # hide_parameters: driver errors must not echo bound values (chunk text) into logs.
     engine = create_async_engine(
         str(settings.database_url), pool_pre_ping=True, hide_parameters=True
@@ -66,8 +72,11 @@ def build_container(
         embeddings,
         max_upload_bytes=settings.max_upload_bytes,
     )
+    retriever: RetrieverPort = PostgresRetriever(engine)
+    if wrap_retriever is not None:
+        retriever = wrap_retriever(retriever)
     answering = AnswerQuestion(
-        PostgresRetriever(engine),
+        retriever,
         embeddings,
         chat,
         AnsweringLimits(

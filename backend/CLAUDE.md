@@ -23,6 +23,10 @@
   (structured output, timeout/retries, errors mapped to `ChatModelTimeout` /
   `ChatModelUnavailable` without provider text), selected by `CHAT_PROVIDER` in
   `app/composition.py`.
+- RAG evaluation (CWYD-11): `eval/` (Dockerfile target `eval`, built only by the Compose `eval` profile).
+  `dataset.yaml` golden questions, `configs.yaml` configurations + price snapshot, `runner.py`
+  drives the real container (`build_container(wrap_retriever=...)` records retrieval), pure
+  scoring in `scoring.py` (DOM-20/21), reports to `docs/eval/`. `python -m eval.run [--config N]`.
 - Errors: domain errors subclass `DomainError` (`code` + message); `app/api/errors.py` maps each
   to its status and the `{code, detail}` body. Routes get the container via
   `app/api/dependencies.py:get_container`.

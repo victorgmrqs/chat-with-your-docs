@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
   (`CHAT_PROVIDER`), with an optional reranker (`RERANK_ENABLED`); the sampling temperature is
   the provider's default unless `CHAT_TEMPERATURE` is set, since some models reject it
   ([CWYD-4](https://goncalvesmarques.atlassian.net/browse/CWYD-4)).
+- Offline RAG evaluation: a golden dataset over the fixture documents and one command
+  (`docker compose --profile eval run --build --rm eval`) that reports hit@k, MRR, correct refusals,
+  citation validity, latency and chat cost per configuration; the committed comparison keeps the
+  defaults (reranker off, 1000/150 chunks, `MIN_RELEVANCE` 0.30)
+  ([CWYD-11](https://goncalvesmarques.atlassian.net/browse/CWYD-11)).
 - Design system and UI components from the design handoff: design tokens with a drift audit
   (`npm run tokens:audit`), a light Tailwind theme with Inter and the brand icon, and the document
   sidebar, chat thread, answer with numbered sources, loading, error and "Not enough evidence"
