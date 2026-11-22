@@ -9,7 +9,14 @@ COPY public ./public
 COPY src ./src
 RUN npm run build
 
-FROM nginxinc/nginx-unprivileged:1.30-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
+# Mainline nginx: the 1.30 stable image still ships nginx with open CVEs (CWYD-6). Then the
+# security fixes not yet in the base image (musl, zlib, expat...; CI passes a daily UPGRADE_EPOCH
+# so the build cache does not keep a stale upgrade layer) and back to its unprivileged user.
+ARG UPGRADE_EPOCH
+USER root
+RUN apk upgrade --no-cache
+USER 101
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080

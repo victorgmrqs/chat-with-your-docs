@@ -40,7 +40,7 @@ npm run api:types                # openapi.json → src/api/schema.d.ts
 VITE_API_MOCKS=true npm run dev  # app on MSW, no backend
 ```
 
-- Image: `Dockerfile` (node:26-alpine build → nginx-unprivileged:1.30-alpine, port 8080).
+- Image: `Dockerfile` (node:26-alpine build → nginx-unprivileged:1.31-alpine mainline, port 8080).
 
 ## Design system
 
