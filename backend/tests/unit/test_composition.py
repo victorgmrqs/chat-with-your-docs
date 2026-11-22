@@ -62,6 +62,23 @@ def test_build_chat_model_openai_uses_openai_key() -> None:
     assert adapter._client.openai_api_key.get_secret_value() == "sk-openai-key"  # type: ignore[attr-defined]  # LangChain client field, checked on purpose
 
 
+@pytest.mark.parametrize("provider", ["openai", "anthropic"])
+def test_build_chat_model_temperature_unset_by_default(provider: str) -> None:
+    settings = make_settings(DATABASE_URL, chat_provider=provider, anthropic_api_key="sk-ant")
+
+    adapter = build_chat_model(settings)
+
+    assert adapter._client.temperature is None  # type: ignore[attr-defined]  # LangChain client, checked on purpose
+
+
+def test_build_chat_model_applies_configured_temperature() -> None:
+    settings = make_settings(DATABASE_URL, chat_temperature=0.2)
+
+    adapter = build_chat_model(settings)
+
+    assert adapter._client.temperature == 0.2  # type: ignore[attr-defined]  # LangChain client, checked on purpose
+
+
 def test_build_chat_model_applies_configured_limits() -> None:
     settings = make_settings(
         DATABASE_URL, answer_max_tokens=321, chat_timeout_seconds=7, chat_max_retries=1

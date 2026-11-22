@@ -40,6 +40,8 @@ class Settings(BaseSettings):
     # Per attempt; the client retries timeouts and 429/5xx up to CHAT_MAX_RETRIES times.
     chat_timeout_seconds: float = Field(default=30, gt=0)
     chat_max_retries: int = Field(default=2, ge=0)
+    # Unset: the provider's default. Some models (e.g. reasoning models) reject the parameter.
+    chat_temperature: float | None = Field(default=None, ge=0, le=2)
 
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 

@@ -53,6 +53,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `ANSWER_MAX_TOKENS` | no (800)                       | Maximum answer length in tokens                 |
 | `CHAT_TIMEOUT_SECONDS` | no (30)                     | Per-attempt chat provider timeout               |
 | `CHAT_MAX_RETRIES`  | no (2)                         | Retries on timeouts, 429 and 5xx                |
+| `CHAT_TEMPERATURE`  | no (unset)                     | Sent only when set; some models reject it       |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
 running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at

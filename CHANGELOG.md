@@ -20,7 +20,8 @@ All notable changes to this project are documented here. The format follows
   "Not enough evidence": `POST /chat` returns numbered sources (file, page or heading, passage)
   built from the stored chunks, never confuses a provider timeout or error with missing evidence
   (`504 chat_timeout`, `502 chat_unavailable`), and runs on OpenAI or Anthropic by configuration
-  (`CHAT_PROVIDER`), with an optional reranker (`RERANK_ENABLED`)
+  (`CHAT_PROVIDER`), with an optional reranker (`RERANK_ENABLED`); the sampling temperature is
+  the provider's default unless `CHAT_TEMPERATURE` is set, since some models reject it
   ([CWYD-4](https://goncalvesmarques.atlassian.net/browse/CWYD-4)).
 
 ### Maintenance

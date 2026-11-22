@@ -16,6 +16,7 @@ class OpenAIChatAdapter(LangChainChatAdapter):
         max_tokens: int,
         timeout_seconds: float,
         max_retries: int,
+        temperature: float | None = None,  # None: not sent, the provider's default applies
         base_url: str | None = None,  # None: the provider's public endpoint
     ) -> None:
         client = ChatOpenAI(
@@ -25,7 +26,7 @@ class OpenAIChatAdapter(LangChainChatAdapter):
             request_timeout=timeout_seconds,
             max_retries=max_retries,
             openai_api_base=base_url,
-            temperature=0,
+            temperature=temperature,
         )
         super().__init__(
             "openai",

@@ -41,6 +41,7 @@ def build_chat_model(settings: Settings) -> ChatModelPort:
         max_tokens=settings.answer_max_tokens,
         timeout_seconds=settings.chat_timeout_seconds,
         max_retries=settings.chat_max_retries,
+        temperature=settings.chat_temperature,
     )
 
 

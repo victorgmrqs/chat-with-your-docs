@@ -16,6 +16,7 @@ class AnthropicChatAdapter(LangChainChatAdapter):
         max_tokens: int,
         timeout_seconds: float,
         max_retries: int,
+        temperature: float | None = None,  # None: not sent, the provider's default applies
         base_url: str | None = None,  # None: the provider's public endpoint
     ) -> None:
         client = ChatAnthropic(
@@ -25,7 +26,7 @@ class AnthropicChatAdapter(LangChainChatAdapter):
             default_request_timeout=timeout_seconds,
             max_retries=max_retries,
             anthropic_api_url=base_url,
-            temperature=0,
+            temperature=temperature,
         )
         super().__init__(
             "anthropic",
