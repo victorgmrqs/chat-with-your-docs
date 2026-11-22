@@ -6,8 +6,8 @@ Workflow: `.github/workflows/ci.yml`. Date: 2026-11-22.
 
 ## container_pipeline_success
 
-**Pull request (checks + image build + scan, no publish).** PR #7, commit `f610d3b`,
-[run 45061035544](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45061035544):
+**Pull request (checks + image build + scan, no publish).** PR #7, commit `d20a483`,
+[run 45062100972](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45062100972):
 
 ```text
 conclusion: success
@@ -23,8 +23,8 @@ publish: skipped          # pull requests never publish
 Both components show their own checks on the PR, and `ci-gate` reports the combined result.
 
 **Authorized publish.** A version tag is one of the publishing events, so the publish path was
-proven before merge with a throwaway tag `v0.0.0-ci.2` on the same commit `f610d3b`
-([run 45061037872](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45061037872)).
+proven before merge with a throwaway tag `v0.0.0-ci.3` on the same commit `d20a483`
+([run 45062098692](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45062098692)).
 The tag was deleted afterwards; the image versions stay in GHCR. Job results and the publish
 jobs' summary (digests as reported by the registry on push):
 
@@ -40,17 +40,32 @@ publish (frontend): success
 ci-gate: success
 
 ### backend
-- Digest: `ghcr.io/victorgmrqs/chat-with-your-docs/backend@sha256:0b1f8edf855a297e6659bb0d55b342f23d374997c6921eef4ad823f5690d4ab7`
-- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/backend:0.0.0-ci.2`
-- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/backend:sha-f610d3b`
+- Digest: `ghcr.io/victorgmrqs/chat-with-your-docs/backend@sha256:e6b4956735a48828cfc922f1a22803a28accf0f5f38abe9f12beb6937e483d89`
+- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/backend:0.0.0-ci.3`
+- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/backend:sha-d20a483`
 ### frontend
-- Digest: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend@sha256:b63e9c653605ce9bc0382aa6d0a5212252a9e9f670bdcb525911b28bc1e4717f`
-- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend:0.0.0-ci.2`
-- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend:sha-f610d3b`
+- Digest: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend@sha256:2aa0f0ed1b42f3b808ed1965cfb58785f0cefdeb6cfb6628a7bbf4b3cac1516d`
+- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend:0.0.0-ci.3`
+- Tag: `ghcr.io/victorgmrqs/chat-with-your-docs/frontend:sha-d20a483`
 ```
 
-Two independent images, each with a commit tag (`sha-f610d3b`) and a digest. The first publish
+Two independent images, each with a commit tag (`sha-d20a483`) and a digest. The first publish
 from `development` happens when PR #7 merges.
+
+**A failed push fails the publish job.** Every step runs under `shell: bash`
+(`bash -e -o pipefail`, as the publish job log shows), so a `docker push` that fails on the left
+of `| tee push.log` fails the step, and an empty digest is rejected explicitly. Local check of
+the shell semantics with a push that is denied:
+
+```text
+$ bash -e -c 'push | tee push.log; echo "step continued"'            # implicit default before the fix
+denied: permission_denied: write_package
+step continued
+bash -e -> exit 0
+$ bash -eo pipefail -c 'push | tee push.log; echo "step continued"'  # shell: bash
+denied: permission_denied: write_package
+bash -eo pipefail -> exit 1
+```
 
 ## container_pipeline_checks_failed
 
@@ -91,7 +106,7 @@ publish: skipped
 
 Fix (commit `8f28623`): the backend runtime stage upgrades its Debian packages and removes
 the unused system pip (the app runs from the uv venv); the frontend moved to the nginx 1.31
-mainline image and upgrades its Alpine packages. Both images pass the scan in run 45061035544
+mainline image and upgrades its Alpine packages. Both images pass the scan in run 45062100972
 above, and `docker compose up --build --wait` reaches healthy for db, backend and frontend, with
 `/`, `/api/health/ready` (through nginx) and `:8000/health/ready` answering 200.
 
