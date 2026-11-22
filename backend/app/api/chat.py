@@ -1,5 +1,5 @@
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, status
 from pydantic import BaseModel
@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from app.api.dependencies import get_container
 from app.api.errors import DATABASE_UNAVAILABLE, error_response
 from app.composition import Container
-from app.domain.answers import Answer, Outcome, Passage, Source
+from app.domain.answers import Answer, Passage, Source
 
 router = APIRouter(tags=["chat"], prefix="/chat")
 
@@ -55,7 +55,7 @@ class SourceResponse(PassageResponse):
 
 class ChatResponse(BaseModel):
     request_id: uuid.UUID
-    outcome: Outcome
+    outcome: Literal["answered", "insufficient_evidence"]  # Outcome values
     answer: str  # [n] markers when answered; fixed message when insufficient (DOM-10)
     sources: list[SourceResponse]
     related_passage: PassageResponse | None  # no citation number (DOM-10)
@@ -67,7 +67,7 @@ class ChatResponse(BaseModel):
     def from_domain(cls, answer: Answer) -> ChatResponse:
         return cls(
             request_id=answer.request_id,
-            outcome=answer.outcome,
+            outcome=answer.outcome.value,
             answer=answer.text,
             sources=[SourceResponse.from_source(source) for source in answer.sources],
             related_passage=(

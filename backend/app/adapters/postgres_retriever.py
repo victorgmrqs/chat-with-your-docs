@@ -25,27 +25,27 @@ _HYBRID_SEARCH = text(
                 AS terms
     ),
     vector_hits AS (
-        SELECT id, row_number() OVER (ORDER BY distance) AS rank
+        SELECT id, row_number() OVER (ORDER BY distance, id) AS rank
         FROM (
             SELECT c.id, c.embedding <=> query.embedding AS distance
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             CROSS JOIN query
-            WHERE c.owner_id = :owner_id AND d.status = :ready
-            ORDER BY distance
+            WHERE c.owner_id = :owner_id AND d.owner_id = :owner_id AND d.status = :ready
+            ORDER BY distance, c.id
             LIMIT :candidates
         ) nearest
     ),
     text_hits AS (
-        SELECT id, row_number() OVER (ORDER BY relevance DESC) AS rank
+        SELECT id, row_number() OVER (ORDER BY relevance DESC, id) AS rank
         FROM (
             SELECT c.id, ts_rank_cd(c.search_vector, query.terms) AS relevance
             FROM chunks c
             JOIN documents d ON d.id = c.document_id
             CROSS JOIN query
-            WHERE c.owner_id = :owner_id AND d.status = :ready
+            WHERE c.owner_id = :owner_id AND d.owner_id = :owner_id AND d.status = :ready
               AND c.search_vector @@ query.terms
-            ORDER BY relevance DESC
+            ORDER BY relevance DESC, c.id
             LIMIT :candidates
         ) matched
     ),

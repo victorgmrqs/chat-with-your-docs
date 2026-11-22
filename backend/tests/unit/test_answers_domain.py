@@ -60,6 +60,12 @@ def test_resolve_citations_strips_model_numeric_markers() -> None:
     assert [s.passage.chunk_id for s in resolved.sources] == [LIMIT.chunk_id]
 
 
+def test_resolve_citations_strips_semicolon_numeric_markers() -> None:
+    resolved = resolve_citations("Limit [S2]. Footnotes [1; 2].", CONTEXT)
+
+    assert resolved.text == "Limit [1]. Footnotes."
+
+
 def test_resolve_citations_numeric_markers_alone_leave_no_source() -> None:
     resolved = resolve_citations("Contractors get two weeks [1].", CONTEXT)
 

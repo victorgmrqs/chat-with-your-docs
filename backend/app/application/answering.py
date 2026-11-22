@@ -107,10 +107,7 @@ class AnswerQuestion:
         if not evidence:
             return self._insufficient(run, related=None)  # the chat model is not called
 
-        reranked = await self._rerank(question, evidence, run)
-        if not reranked:  # the reranker found nothing helpful: show the best gated chunk
-            return self._insufficient(run, related=evidence[0])
-        evidence = reranked
+        evidence = await self._rerank(question, evidence, run)
 
         sources = label_chunks(evidence, self._limits.context_token_budget)  # DOM-11
         run.context_chunks = len(sources)
@@ -137,6 +134,12 @@ class AnswerQuestion:
                 "Reranker failed, using fused order: %s",
                 type(exc).__name__,
                 extra={"request_id": str(run.request_id), "error_type": type(exc).__name__},
+            )
+            return evidence
+        if not reranked:  # DOM-11: no valid source id is a reranker failure, not missing evidence
+            logger.warning(
+                "Reranker kept no valid source, using fused order",
+                extra={"request_id": str(run.request_id), "error_type": "EmptyRerank"},
             )
             return evidence
         run.reranked = True

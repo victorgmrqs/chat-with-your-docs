@@ -17,7 +17,7 @@ INSUFFICIENT_EVIDENCE_MESSAGE = (
 # One marker group: [S1] or [S1, S3]. Labels are the ones given in the prompt (DOM-09).
 _MARKER = re.compile(r"(\s*)\[(S\d+(?:\s*[,;]\s*S\d+)*)\]")
 # Numeric markers written by the model ([3], [1, 2]) would look like backend citations.
-_NUMERIC_MARKER = re.compile(r"\s*\[\d+(?:\s*,\s*\d+)*\]")
+_NUMERIC_MARKER = re.compile(r"\s*\[\d+(?:\s*[,;]\s*\d+)*\]")
 
 
 # C0 control characters except tab, newline and carriage return (PostgreSQL rejects NUL).

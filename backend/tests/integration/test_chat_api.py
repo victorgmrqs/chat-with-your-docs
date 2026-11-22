@@ -108,8 +108,23 @@ def test_chat_coworking_two_sources(client_for: ClientFactory) -> None:
     assert (body["provider"], body["model"]) == ("fake", "fake-chat-model")
 
 
-def test_chat_contractor_parental_leave_insufficient(client_for: ClientFactory) -> None:
+def test_chat_contractor_parental_leave_answered(client_for: ClientFactory) -> None:
+    # The fixture states the exclusion, so "contractors are not covered" is a grounded answer.
     case = CASES["contractor_parental_leave"]
+    client = client_for(_oracle(case))
+
+    body = client.post("/chat", json={"question": case["question"]}).json()
+
+    [expected] = case["expected_sources"]
+    [source] = body["sources"]
+    assert body["outcome"] == "answered"
+    assert (source["filename"], source["page"]) == (expected["filename"], expected["page"])
+    assert expected["heading_contains"] in source["heading"]
+    assert expected["passage_contains"] in source["passage"]
+
+
+def test_chat_uncovered_question_insufficient(client_for: ClientFactory) -> None:
+    case = CASES["leave_split_not_covered"]
     client = client_for(_oracle(case))
 
     body = client.post("/chat", json={"question": case["question"]}).json()
@@ -143,6 +158,7 @@ def test_chat_invented_citation_is_not_a_source(client_for: ClientFactory) -> No
 
     assert response.status_code == 200
     assert response.json()["outcome"] == "insufficient_evidence"
+    assert response.json()["answer"] == INSUFFICIENT_EVIDENCE_MESSAGE  # model text never leaks
     assert response.json()["sources"] == []
 
 

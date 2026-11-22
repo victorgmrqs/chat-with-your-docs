@@ -23,13 +23,26 @@
     {
       "id": "contractor_parental_leave",
       "question": "What is the parental leave policy for contractors?",
+      "expected_outcome": "answered",
+      "expected_sources": [
+        {
+          "filename": "parental-leave-policy.md",
+          "page": null,
+          "heading_contains": "Contractors",
+          "passage_contains": "Contractors are not covered"
+        }
+      ]
+    },
+    {
+      "id": "leave_split_not_covered",
+      "question": "Can parental leave be split into several separate periods?",
       "expected_outcome": "insufficient_evidence",
       "expected_sources": [],
       "expected_related_passage": {
         "filename": "parental-leave-policy.md",
         "page": null,
-        "heading_contains": "Eligibility",
-        "passage_contains": "only to full-time employees"
+        "heading_contains": "Duration",
+        "passage_contains": "sixteen weeks of paid parental leave"
       }
     },
     {

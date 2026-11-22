@@ -239,22 +239,22 @@ async def test_answer_question_reranker_failure_fails_open() -> None:
     assert LIMIT.text in chat.prompts[1].user
 
 
-async def test_answer_question_reranker_keeps_nothing_is_insufficient() -> None:
-    use_case, chat = _use_case([APPROVAL], RerankDraft(source_ids=["S9"]), rerank=True)
+@pytest.mark.parametrize("source_ids", [["S9"], []])
+async def test_answer_question_reranker_keeps_nothing_fails_open(source_ids: list[str]) -> None:
+    # DOM-11: invented or no ids are a reranker failure; the fused evidence reaches the prompt.
+    use_case, chat = _use_case(
+        [APPROVAL, LIMIT],
+        RerankDraft(source_ids=source_ids),
+        _answered("A [S1]. B [S2]."),
+        rerank=True,
+    )
 
-    answer = await use_case.answer(OWNER, CONTRACTORS)
+    answer = await use_case.answer(OWNER, COWORKING)
 
-    assert answer.outcome is Outcome.INSUFFICIENT_EVIDENCE
-    assert len(chat.prompts) == 1  # the answer call never happened
-
-
-async def test_answer_question_reranker_keeps_nothing_returns_related_passage() -> None:
-    use_case, _ = _use_case([APPROVAL, LIMIT], RerankDraft(source_ids=[]), rerank=True)
-
-    answer = await use_case.answer(OWNER, CONTRACTORS)
-
-    assert answer.related_passage is not None
-    assert answer.related_passage.chunk_id == APPROVAL.chunk_id
+    assert answer.outcome is Outcome.ANSWERED
+    assert [s.passage.chunk_id for s in answer.sources] == [APPROVAL.chunk_id, LIMIT.chunk_id]
+    assert answer.reranked is False
+    assert len(chat.prompts) == 2
 
 
 @pytest.mark.parametrize("question", ["", "   \n", "\x00\x01"])

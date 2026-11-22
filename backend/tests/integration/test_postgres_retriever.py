@@ -112,6 +112,25 @@ async def test_hybrid_search_only_ready_documents_of_owner(
     assert [r.document_id for r in results] == [mine.id]
 
 
+async def test_hybrid_search_requires_document_owner_too(
+    engine: AsyncEngine, repository: PostgresDocumentRepository, retriever: PostgresRetriever
+) -> None:
+    # DOM-06/07: a chunk whose owner disagrees with its document's owner is never returned.
+    embeddings = FakeEmbeddings(EMBEDDING_DIMENSIONS)
+    owner = uuid.uuid4()
+    foreign = await _ready_document(repository, embeddings, [LIMIT], owner_id=uuid.uuid4())
+    async with engine.begin() as connection:
+        await connection.execute(
+            text("UPDATE chunks SET owner_id = :owner WHERE document_id = :id"),
+            {"owner": owner, "id": foreign.id},
+        )
+    [query_vector] = await embeddings.embed_documents(["US$ 250"])
+
+    results = await retriever.search(owner, "US$ 250", query_vector, candidates=20, limit=6)
+
+    assert results == []
+
+
 async def test_hybrid_search_respects_limit(
     repository: PostgresDocumentRepository, retriever: PostgresRetriever
 ) -> None:
