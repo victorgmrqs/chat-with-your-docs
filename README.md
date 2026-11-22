@@ -204,7 +204,15 @@ uv run --env-file ../.env uvicorn app.main:app --reload  # API on :8000; uv load
 # frontend/
 npm run lint && npm run typecheck && npm test
 npm run dev                                            # Vite on :5173, /api → BACKEND_URL (default :8000)
+npm run tokens:audit                                   # design tokens: no drift, no hardcoded values
 ```
+
+The UI is built with Tailwind v4 and shadcn/ui on a design system extracted from the design
+handoff: tokens live in `docs/design-tokens.json` (primitive → semantic → component), the theme in
+`frontend/src/styles/theme.css` is generated from it (`npm run tokens:apply`), and the audit fails
+on a missing token, a theme value that drifted or a hardcoded color, size or radius in `src/`.
+With `npm run dev`, `http://localhost:5173/preview.html` shows every handoff screen composed from
+the components with static data (dev only, not part of the build).
 
 The chat adapter contract tests (`tests/contract/`) run both the OpenAI and the Anthropic
 adapters offline against a local HTTP stub of the providers' APIs. The `live` tests call the
@@ -225,9 +233,10 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 ```
 backend/    FastAPI app (app/{domain,application,adapters,api}), Alembic migrations, tests and
             test fixtures (scripts/generate_fixtures.py), Dockerfile
-frontend/   React + Vite SPA, nginx template, Dockerfile
+frontend/   React + Vite SPA (src/components, src/styles/theme.css), token scripts
+            (scripts/tokens), dev-only design preview (preview.html), nginx template, Dockerfile
 db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
             by Compose also creates the read-only role for the Postgres MCP server
-docs/       HTTP evidence, evaluation reports, curation notes
+docs/       design tokens, domain rules, HTTP evidence, evaluation reports, curation notes
 compose.yaml, .env.example
 ```

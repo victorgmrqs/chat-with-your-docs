@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
   (`CHAT_PROVIDER`), with an optional reranker (`RERANK_ENABLED`); the sampling temperature is
   the provider's default unless `CHAT_TEMPERATURE` is set, since some models reject it
   ([CWYD-4](https://goncalvesmarques.atlassian.net/browse/CWYD-4)).
+- Design system and UI components from the design handoff: design tokens with a drift audit
+  (`npm run tokens:audit`), a light Tailwind theme with Inter and the brand icon, and the document
+  sidebar, chat thread, answer with numbered sources, loading, error and "Not enough evidence"
+  states, composed into the five handoff screens on a dev-only preview page
+  ([CWYD-10](https://goncalvesmarques.atlassian.net/browse/CWYD-10)).
 
 ### Maintenance
 

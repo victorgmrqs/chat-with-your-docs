@@ -1,0 +1,179 @@
+/* Design tokens (light theme only). Generated from docs/design-tokens.json by
+ * scripts/tokens/apply.mjs; do not edit by hand. `npm run tokens:audit` fails on any drift.
+ * Primitives are plain variables; only semantic and component colors become utilities,
+ * so components never reach a raw palette value. */
+:root {
+  /* Primitive */
+  --white: #FFFFFF;
+  --gray-25: #FAFAF9;
+  --gray-50: #F6F6F4;
+  --gray-100: #F0F0EE;
+  --gray-200: #E4E4E0;
+  --gray-300: #CFCFCA;
+  --gray-600: #5F5F66;
+  --gray-700: #45454C;
+  --gray-800: #2E2E33;
+  --gray-900: #18181B;
+  --blue-50: #EEF2FC;
+  --blue-100: #C9D6F7;
+  --blue-600: #2952CC;
+  --blue-800: #1E3E9E;
+  --green-50: #E7F4EA;
+  --green-700: #1B6B36;
+  --amber-50: #FFF1D6;
+  --amber-800: #7A4A00;
+  --red-25: #FDF3F2;
+  --red-50: #FCE8E6;
+  --red-200: #E8B4AE;
+  --red-700: #A3231A;
+
+  /* Semantic */
+  --background: var(--white);
+  --foreground: var(--gray-900);
+  --foreground-secondary: var(--gray-800);
+  --foreground-tertiary: var(--gray-700);
+  --card: var(--white);
+  --card-foreground: var(--gray-900);
+  --popover: var(--white);
+  --popover-foreground: var(--gray-900);
+  --primary: var(--blue-600);
+  --primary-foreground: var(--white);
+  --primary-hover: var(--blue-800);
+  --primary-soft: var(--blue-100);
+  --secondary: var(--gray-100);
+  --secondary-foreground: var(--gray-900);
+  --muted: var(--gray-50);
+  --muted-foreground: var(--gray-600);
+  --surface-subtle: var(--gray-25);
+  --accent: var(--blue-50);
+  --accent-foreground: var(--blue-800);
+  --border: var(--gray-200);
+  --input: var(--gray-300);
+  --ring: var(--blue-600);
+  --disabled: var(--gray-200);
+  --disabled-foreground: var(--gray-600);
+  --destructive: var(--red-700);
+  --destructive-foreground: var(--white);
+  --destructive-subtle: var(--red-25);
+  --destructive-soft: var(--red-50);
+  --destructive-border: var(--red-200);
+  --success: var(--green-700);
+  --success-subtle: var(--green-50);
+  --warning: var(--amber-800);
+  --warning-subtle: var(--amber-50);
+  --info: var(--blue-800);
+  --info-subtle: var(--blue-50);
+  --sidebar: var(--gray-50);
+
+  /* Component */
+  --status-indexing: var(--warning-subtle);
+  --status-indexing-foreground: var(--warning);
+  --status-ready: var(--success-subtle);
+  --status-ready-foreground: var(--success);
+  --status-failed: var(--destructive-soft);
+  --status-failed-foreground: var(--destructive);
+  --citation: var(--accent);
+  --citation-foreground: var(--primary);
+  --highlight: var(--accent);
+  --highlight-border: var(--primary);
+  --highlight-foreground: var(--accent-foreground);
+  --bubble: var(--secondary);
+  --skeleton: var(--secondary);
+  --passage: var(--muted);
+  --passage-foreground: var(--foreground-secondary);
+  --related-passage: var(--surface-subtle);
+  --related-passage-border: var(--input);
+  --brand-detail: var(--primary-soft);
+}
+
+@theme inline {
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --leading-*: initial;
+  --shadow-*: initial;
+  --inset-shadow-*: initial;
+  --drop-shadow-*: initial;
+  --text-shadow-*: initial;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-foreground-secondary: var(--foreground-secondary);
+  --color-foreground-tertiary: var(--foreground-tertiary);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-soft: var(--primary-soft);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-surface-subtle: var(--surface-subtle);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-disabled: var(--disabled);
+  --color-disabled-foreground: var(--disabled-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-subtle: var(--destructive-subtle);
+  --color-destructive-soft: var(--destructive-soft);
+  --color-destructive-border: var(--destructive-border);
+  --color-success: var(--success);
+  --color-success-subtle: var(--success-subtle);
+  --color-warning: var(--warning);
+  --color-warning-subtle: var(--warning-subtle);
+  --color-info: var(--info);
+  --color-info-subtle: var(--info-subtle);
+  --color-sidebar: var(--sidebar);
+  --color-status-indexing: var(--status-indexing);
+  --color-status-indexing-foreground: var(--status-indexing-foreground);
+  --color-status-ready: var(--status-ready);
+  --color-status-ready-foreground: var(--status-ready-foreground);
+  --color-status-failed: var(--status-failed);
+  --color-status-failed-foreground: var(--status-failed-foreground);
+  --color-citation: var(--citation);
+  --color-citation-foreground: var(--citation-foreground);
+  --color-highlight: var(--highlight);
+  --color-highlight-border: var(--highlight-border);
+  --color-highlight-foreground: var(--highlight-foreground);
+  --color-bubble: var(--bubble);
+  --color-skeleton: var(--skeleton);
+  --color-passage: var(--passage);
+  --color-passage-foreground: var(--passage-foreground);
+  --color-related-passage: var(--related-passage);
+  --color-related-passage-border: var(--related-passage-border);
+  --color-brand-detail: var(--brand-detail);
+
+  --font-sans: 'Inter Variable', system-ui, sans-serif;
+  --tracking-eyebrow: 0.06em;
+
+  --text-caption: 12px;
+  --text-label: 13px;
+  --text-body-sm: 14px;
+  --text-body: 15px;
+  --text-body-lg: 16px;
+  --text-title-sm: 17px;
+  --text-title: 20px;
+  --text-heading: 24px;
+  --text-display: 28px;
+
+  --leading-snug: 1.45;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.6;
+
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 14px;
+  --radius-3xl: 16px;
+  --radius-full: 999px;
+}

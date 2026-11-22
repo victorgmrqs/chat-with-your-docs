@@ -25,3 +25,12 @@ Change a rule here first, then the code.
 | DOM-11 | Retrieved chunks are delimited and escaped in the prompt, which states that they are data and never instructions. The context respects `CONTEXT_TOKEN_BUDGET` and the answer `ANSWER_MAX_TOKENS`. With `RERANK_ENABLED`, only reranked chunks reach the prompt and the sources; if the reranker fails or keeps no source id from its prompt, the fused order is used and the response says `reranked: false`. |
 | DOM-12 | Technical failures (provider timeout, provider error, model refusal or content filter, invalid structured output after the adapter's retries) are reported as errors, `504 chat_timeout` or `502 chat_unavailable` (`502 retrieval_unavailable` when the question cannot be embedded), never as `insufficient_evidence`. Logs carry diagnostic signals only (error type, provider, model, timings), never question, prompt, chunk or answer text. |
 | DOM-13 | The chat provider and model come only from configuration (`CHAT_PROVIDER`, `CHAT_MODEL`). Every answer records the provider and model that produced it, in the response and in its content-free log line. |
+
+## Interface (CWYD-10)
+
+| ID | Rule |
+|---|---|
+| DOM-14 | One English screen, light theme only, Inter. Borders carry the hierarchy; there are no shadows. Colors, font sizes, line heights and radii come only from the tokens in `docs/design-tokens.json`, declared in `frontend/src/styles/theme.css`. |
+| DOM-15 | Red (`destructive`, `status-failed`) is reserved for failures: a failed document, a failed upload, a request error. "Not enough evidence" is a normal outcome: it uses neutral colors, and its related passage is shown in a dashed box, never with a citation number. |
+| DOM-16 | Copy about accepted files names the formats of DOM-01: a `.pdf` with selectable text, a `.md` or a `.txt`. This overrides the PDF-only copy in the design PNGs. Failure and rejection messages are the backend's own (DOM-01, DOM-03). |
+| DOM-17 | The question input and Send are disabled while no document is `ready` and while an answer is loading; the hint says why. Asking while other documents are indexing is allowed, and a banner says only Ready documents are searched. |
