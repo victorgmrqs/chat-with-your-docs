@@ -248,14 +248,21 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 | Job | What it does |
 | --- | --- |
 | `changes` | Path filter: `backend/**` and `db/**` select the backend, `frontend/**` the frontend (a change to the workflow selects both) |
-| `backend checks` | `uv sync --locked`, ruff (lint + format), mypy, pytest with integration tests on testcontainers, and a check that `frontend/openapi.json` matches the API |
-| `frontend checks` | `npm ci`, ESLint, `tsc -b`, Vitest, and a check that `src/api/schema.d.ts` matches `openapi.json` |
+| `backend checks` | The backend lint, typecheck and test commands from [Development](#development), plus a check that `frontend/openapi.json` matches the API |
+| `frontend checks` | The frontend lint, typecheck and test commands from [Development](#development), plus a check that `src/api/schema.d.ts` matches `openapi.json` |
 | `image (<component>)` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
 | `publish (<component>)` | Pushes the scanned image to GHCR (never on pull requests) |
 | `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
 
 `ci-gate` is the only required status check on `development` and `main`, so a PR that touches
-only the frontend is not left waiting for backend checks that never run.
+only the frontend is not left waiting for backend checks that never run. The path filter applies
+to pull requests only; pushes, tags and manual runs check both components.
+
+To pass the scan, the backend image applies pending Debian security updates and removes the
+system pip (the app runs from the uv virtualenv), and the frontend image uses the mainline
+`nginx-unprivileged:1.31-alpine` with pending Alpine updates, because the 1.30 stable image still
+ships nginx with fixable vulnerabilities. CI passes a daily `UPGRADE_EPOCH` build argument, so the
+upgrade layer is rebuilt once a day instead of being served from the build cache.
 
 **Publishing.** Pushes to `development` and `main`, `v*.*.*` tags and manual runs (*Actions →
 CI → Run workflow* on `development` or `main`) build both images and publish them only when

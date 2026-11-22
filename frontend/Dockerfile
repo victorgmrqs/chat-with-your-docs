@@ -11,7 +11,9 @@ RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.31-alpine
 # Mainline nginx: the 1.30 stable image still ships nginx with open CVEs (CWYD-6). Then the
-# security fixes not yet in the base image (musl, zlib, expat...) and back to its unprivileged user.
+# security fixes not yet in the base image (musl, zlib, expat...; CI passes a daily UPGRADE_EPOCH
+# so the build cache does not keep a stale upgrade layer) and back to its unprivileged user.
+ARG UPGRADE_EPOCH
 USER root
 RUN apk upgrade --no-cache
 USER 101

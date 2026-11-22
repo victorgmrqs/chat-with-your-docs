@@ -1,14 +1,9 @@
-# CI and image publishing (CWYD-6).
+# CI and image publishing (CWYD-6). Triggers, publish rules and the required check are described
+# in README § "CI and images".
 #
 # changes ─┬─ backend ──┐
 #          └─ frontend ─┴─ image (build + scan, per component) ── publish (GHCR) ─┐
 #                                                                                 ci-gate
-# - Pull requests run the checks of the components they touch, then build and scan those images.
-#   Nothing is pushed.
-# - Pushes to development/main, version tags and manual runs on development/main build every
-#   component and publish both images only when every check and every scan passed.
-# - `ci-gate` always reports and is the only required status check: a job skipped by the path
-#   filter passes it, a failed or cancelled one fails it.
 # Third-party actions are pinned by commit SHA; the comment names the release.
 
 name: CI
@@ -30,26 +25,26 @@ concurrency:
 
 env:
   REGISTRY: ghcr.io
-  # Publishing is authorized on pushes (development, main, tags) and on manual runs from
-  # development or main; pull requests never publish.
-  PUBLISH: >-
-    ${{ github.event_name == 'push'
-        || (github.event_name == 'workflow_dispatch'
-            && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')) }}
 
 jobs:
   changes:
     name: changes
     runs-on: ubuntu-latest
     permissions:
-      contents: read
       pull-requests: read
     outputs:
-      backend: ${{ steps.select.outputs.backend }}
-      frontend: ${{ steps.select.outputs.frontend }}
-      components: ${{ steps.select.outputs.components }}
+      # Pull requests check and build only what they touch; every other event builds both
+      # components, so each published commit has both images.
+      backend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.backend == 'true' }}
+      frontend: ${{ github.event_name != 'pull_request' || steps.filter.outputs.frontend == 'true' }}
+      components: ${{ github.event_name == 'pull_request' && steps.filter.outputs.changes || '["backend","frontend"]' }}
+      # Publishing is authorized on pushes (development, main, tags) and on manual runs from
+      # development or main; pull requests never publish.
+      publish: >-
+        ${{ github.event_name == 'push'
+            || (github.event_name == 'workflow_dispatch'
+                && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')) }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - id: filter
         if: github.event_name == 'pull_request'
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -62,22 +57,6 @@ jobs:
             frontend:
               - 'frontend/**'
               - '.github/workflows/ci.yml'
-      - id: select
-        # Outside pull requests every component is built, so each commit has both images.
-        env:
-          IS_PR: ${{ github.event_name == 'pull_request' }}
-          BACKEND: ${{ steps.filter.outputs.backend }}
-          FRONTEND: ${{ steps.filter.outputs.frontend }}
-        run: |
-          if [ "$IS_PR" != "true" ]; then BACKEND=true; FRONTEND=true; fi
-          components=$(jq -cn --arg b "$BACKEND" --arg f "$FRONTEND" \
-            '[if $b == "true" then "backend" else empty end,
-              if $f == "true" then "frontend" else empty end]')
-          {
-            echo "backend=$BACKEND"
-            echo "frontend=$FRONTEND"
-            echo "components=$components"
-          } >> "$GITHUB_OUTPUT"
 
   backend:
     name: backend checks
@@ -108,7 +87,7 @@ jobs:
         run: |
           uv run python -m scripts.export_openapi
           git diff --exit-code -- ../frontend/openapi.json \
-            || { echo "::error::frontend/openapi.json is stale: run 'uv run python -m scripts.export_openapi' in backend/"; exit 1; }
+            || { echo "::error::frontend/openapi.json is stale: regenerate it (README § Development)"; exit 1; }
 
   frontend:
     name: frontend checks
@@ -137,7 +116,7 @@ jobs:
         run: |
           npm run api:types
           git diff --exit-code -- src/api/schema.d.ts \
-            || { echo "::error::src/api/schema.d.ts is stale: run 'npm run api:types' in frontend/"; exit 1; }
+            || { echo "::error::src/api/schema.d.ts is stale: regenerate it (README § Development)"; exit 1; }
 
   image:
     name: image
@@ -153,6 +132,8 @@ jobs:
       fail-fast: false
       matrix:
         component: ${{ fromJSON(needs.changes.outputs.components) }}
+    env:
+      PUBLISH: ${{ needs.changes.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -165,16 +146,22 @@ jobs:
             type=sha,format=short
             type=ref,event=branch
             type=semver,pattern={{version}}
+      - id: epoch
+        # Daily value for the Dockerfiles' UPGRADE_EPOCH: the OS security-upgrade layer is
+        # rebuilt once a day instead of being served from the build cache indefinitely.
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
       - name: Build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ${{ matrix.component }}
           load: true
           push: false
+          build-args: UPGRADE_EPOCH=${{ steps.epoch.outputs.day }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.component }}
-          cache-to: type=gha,mode=max,scope=${{ matrix.component }}
+          # Only publishing runs write the cache; pull requests read it.
+          cache-to: ${{ env.PUBLISH == 'true' && format('type=gha,mode=max,scope={0}', matrix.component) || '' }}
       - name: Scan (fixable HIGH and CRITICAL vulnerabilities fail the job)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -202,13 +189,9 @@ jobs:
   publish:
     name: publish
     needs: [changes, image]
-    # Every check and every scan must have passed: one failing image blocks both publishes.
-    if: >-
-      !cancelled()
-      && needs.image.result == 'success'
-      && (github.event_name == 'push'
-          || (github.event_name == 'workflow_dispatch'
-              && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/development')))
+    # The implicit success() requires every image (check + scan) to have passed: one failure
+    # publishes nothing.
+    if: needs.changes.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -231,11 +214,10 @@ jobs:
         run: |
           gunzip -c "${{ matrix.component }}.tar.gz" | docker load
           docker push --all-tags "$IMAGE"
-          digest=$(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE:sha-${GITHUB_SHA::7}")
           {
             echo "### ${{ matrix.component }}"
             echo
-            echo "- Digest: \`$digest\`"
+            docker image ls --digests --format '- Digest: `{{.Repository}}@{{.Digest}}`' "$IMAGE" | head -n 1
             docker image ls --format '- Tag: `{{.Repository}}:{{.Tag}}`' "$IMAGE"
           } >> "$GITHUB_STEP_SUMMARY"
 

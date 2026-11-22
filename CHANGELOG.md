@@ -39,7 +39,8 @@ All notable changes to this project are documented here. The format follows
   component a change touches, both Docker images are built and scanned for fixable HIGH/CRITICAL
   vulnerabilities, and a single always-reporting `ci-gate` is the required check. Pushes to
   `development`/`main` and version tags publish both images to GHCR, tagged `sha-<commit>` and
-  identified by digest, only when every check and scan passed
+  identified by digest, only when every check and scan passed. Both images now pass that scan:
+  the backend drops the unused system pip and the frontend moves to mainline nginx 1.31
   ([CWYD-6](https://goncalvesmarques.atlassian.net/browse/CWYD-6)).
 
 ### Maintenance
