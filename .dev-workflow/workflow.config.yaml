@@ -78,10 +78,11 @@ docs_map:
   - if_diff_touches: "**/Dockerfile"
     update: ["README.md"]
     severity: warning
-  # TODO(CWYD-5): contract-first rule once the API client exists:
-  # - if_diff_touches: "backend/app/api/**"
-  #   update: ["frontend/src/api/schema.d.ts"]   # regenerate with openapi-typescript
-  #   severity: blocker
+  - if_diff_touches: "backend/app/api/**"
+    # Contract-first: `uv run python -m scripts.export_openapi` (backend/) then
+    # `npm --prefix frontend run api:types`; MSW handlers are typed from the same schema.
+    update: ["frontend/openapi.json", "frontend/src/api/schema.d.ts"]
+    severity: blocker
   # TODO(CWYD-11): eval script/dataset changes → docs/eval/ report
 
 documentation_policy:

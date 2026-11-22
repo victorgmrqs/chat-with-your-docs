@@ -6,12 +6,14 @@ import { StatusChip } from '@/components/StatusChip'
 import { UploadButton } from '@/components/UploadButton'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import {
   ACCEPTED_FORMATS,
   countDocuments,
   formatCounts,
   type DocumentItem,
 } from '@/lib/documents'
+import type { ListState } from '@/hooks/useDocuments'
 import { cn } from '@/lib/utils'
 
 export interface UploadRejection {
@@ -31,6 +33,11 @@ interface DocumentSidebarProps {
   onUpload?: () => void
   onRetry?: (document: DocumentItem) => void
   onRemove?: (document: DocumentItem) => void
+  /**
+   * `loading` until the first fetch answers, `unavailable` when it failed. Neither shows
+   * "No documents yet" or counters: the collection is unknown, not empty (DOM-19).
+   */
+  listState?: ListState
   className?: string
 }
 
@@ -41,6 +48,7 @@ export function DocumentSidebar({
   onUpload,
   onRetry,
   onRemove,
+  listState = 'loaded',
   className,
 }: DocumentSidebarProps) {
   const counts = countDocuments(documents)
@@ -59,7 +67,7 @@ export function DocumentSidebar({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <Eyebrow>Documents</Eyebrow>
         <span aria-live="polite" className="text-label text-muted-foreground">
-          {formatCounts(counts)}
+          {listState === 'loaded' && formatCounts(counts)}
         </span>
       </div>
 
@@ -75,28 +83,14 @@ export function DocumentSidebar({
         </Alert>
       )}
 
-      {documents.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-xl border-[1.5px] border-dashed border-input px-4 py-6 text-center">
-          <File aria-hidden="true" strokeWidth={1.75} className="size-6 text-muted-foreground" />
-          <p className="m-0 text-body-sm font-semibold">No documents yet</p>
-          <p className="m-0 text-label text-muted-foreground">
-            Files you upload appear here with their status.
-          </p>
-        </div>
-      ) : (
-        <ul className="m-0 flex list-none flex-col gap-2 p-0">
-          {documents.map((document) => (
-            <DocumentRow
-              key={document.id}
-              document={document}
-              citedAs={citations?.[document.id]}
-              onUpload={onUpload}
-              onRetry={onRetry}
-              onRemove={onRemove}
-            />
-          ))}
-        </ul>
-      )}
+      <DocumentListBody
+        listState={listState}
+        documents={documents}
+        citations={citations}
+        onUpload={onUpload}
+        onRetry={onRetry}
+        onRemove={onRemove}
+      />
 
       <div className="mt-auto flex flex-col gap-2 text-caption text-muted-foreground">
         {hasCitations && (
@@ -114,6 +108,55 @@ export function DocumentSidebar({
         <span>Only Ready documents can be searched.</span>
       </div>
     </aside>
+  )
+}
+
+/** The list area: loading, unavailable, empty or the rows (DOM-19). */
+function DocumentListBody({
+  listState,
+  documents,
+  citations,
+  onUpload,
+  onRetry,
+  onRemove,
+}: Required<Pick<DocumentSidebarProps, 'listState'>> &
+  Pick<DocumentSidebarProps, 'documents' | 'citations' | 'onUpload' | 'onRetry' | 'onRemove'>) {
+  if (listState === 'loading') {
+    return (
+      <div aria-busy="true" aria-label="Loading documents" className="flex flex-col gap-2">
+        {[0, 1, 2].map((row) => (
+          <Skeleton key={row} className="h-11 rounded-lg" />
+        ))}
+      </div>
+    )
+  }
+  if (listState === 'unavailable') {
+    return <p className="m-0 text-label text-muted-foreground">Your documents couldn't be loaded.</p>
+  }
+  if (documents.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 rounded-xl border-[1.5px] border-dashed border-input px-4 py-6 text-center">
+        <File aria-hidden="true" strokeWidth={1.75} className="size-6 text-muted-foreground" />
+        <p className="m-0 text-body-sm font-semibold">No documents yet</p>
+        <p className="m-0 text-label text-muted-foreground">
+          Files you upload appear here with their status.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <ul className="m-0 flex list-none flex-col gap-2 p-0">
+      {documents.map((document) => (
+        <DocumentRow
+          key={document.id}
+          document={document}
+          citedAs={citations?.[document.id]}
+          onUpload={onUpload}
+          onRetry={onRetry}
+          onRemove={onRemove}
+        />
+      ))}
+    </ul>
   )
 }
 

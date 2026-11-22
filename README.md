@@ -205,7 +205,20 @@ uv run --env-file ../.env uvicorn app.main:app --reload  # API on :8000; uv load
 npm run lint && npm run typecheck && npm test
 npm run dev                                            # Vite on :5173, /api → BACKEND_URL (default :8000)
 npm run tokens:audit                                   # design tokens: no drift, no hardcoded values
+npm run api:types                                      # openapi.json → src/api/schema.d.ts
+VITE_API_MOCKS=true npm run dev                        # the app on MSW mocks, no backend needed
 ```
+
+The frontend is typed from the API contract: `backend/scripts/export_openapi.py` writes the
+FastAPI schema to `frontend/openapi.json` without starting the app, `npm run api:types` turns it
+into `frontend/src/api/schema.d.ts` (both committed), and every call goes through the
+openapi-fetch client in `frontend/src/api/client.ts` on the relative `/api` path. After changing
+anything under `backend/app/api/`, regenerate both:
+`cd backend && uv run python -m scripts.export_openapi && npm --prefix ../frontend run api:types`.
+The MSW handlers used by the Vitest suite and by `VITE_API_MOCKS=true` are typed from the same
+schema, so a contract change breaks the frontend typecheck instead of the running app.
+`openapi-typescript` declares a TypeScript 5 peer; an `overrides` entry in `frontend/package.json`
+runs it on the project's TypeScript 6.
 
 The UI is built with Tailwind v4 and shadcn/ui on a design system extracted from the design
 handoff: tokens live in `docs/design-tokens.json` (primitive → semantic → component), the theme in
@@ -232,8 +245,10 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 
 ```
 backend/    FastAPI app (app/{domain,application,adapters,api}), Alembic migrations, tests and
-            test fixtures (scripts/generate_fixtures.py), Dockerfile
-frontend/   React + Vite SPA (src/components, src/styles/theme.css), token scripts
+            test fixtures (scripts/generate_fixtures.py), OpenAPI export
+            (scripts/export_openapi.py), Dockerfile
+frontend/   React + Vite SPA (src/components, src/hooks, src/api with the generated schema,
+            src/mocks for MSW, src/styles/theme.css), openapi.json, token scripts
             (scripts/tokens), dev-only design preview (preview.html), nginx template, Dockerfile
 db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
             by Compose also creates the read-only role for the Postgres MCP server

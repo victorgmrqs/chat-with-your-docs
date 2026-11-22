@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { ChatTurn } from '@/lib/chat'
 
@@ -18,6 +18,12 @@ describe('ChatThread', () => {
     expect(screen.getByRole('heading', { name: 'Add documents to get started' })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: 'Upload documents' }))
     expect(onUpload).toHaveBeenCalledOnce()
+  })
+
+  it('invites an upload when every document failed and nothing was asked', () => {
+    render(<ChatThread turns={[]} counts={{ ready: 0, indexing: 0, failed: 2 }} />)
+
+    expect(screen.getByRole('heading', { name: 'Add documents to get started' })).toBeInTheDocument()
   })
 
   it('says only Ready documents are searched while others are indexing', () => {
@@ -69,7 +75,7 @@ describe('ChatThread', () => {
   it('shows a request error as an alert with Retry', async () => {
     const onRetry = vi.fn()
     const turns: ChatTurn[] = [
-      { id: '1', question: 'Q?', status: 'error', message: 'The request timed out.' },
+      { id: '1', question: 'Q?', status: 'error', message: 'The request timed out.', retryable: true },
     ]
     const user = userEvent.setup()
     render(<ChatThread turns={turns} counts={someReady} onRetry={onRetry} />)
@@ -99,5 +105,31 @@ describe('ChatThread', () => {
 
     expect(screen.getByRole('article', { name: 'Earlier answer' })).toHaveTextContent('One')
     expect(screen.getByRole('article', { name: 'Answer' })).toHaveTextContent('Two')
+  })
+
+  describe('scrolling to the latest turn', () => {
+    const scrollIntoView = vi.fn()
+
+    afterEach(() => {
+      scrollIntoView.mockReset()
+      // jsdom has no scrollIntoView; the stub only lives for these tests.
+      delete (Element.prototype as Partial<Element>).scrollIntoView
+    })
+
+    it('scrolls when a question is sent and when its answer arrives, not on mount', () => {
+      Element.prototype.scrollIntoView = scrollIntoView
+      const first: ChatTurn = { id: '1', question: 'One?', status: 'answered', answer: 'One', sources: [] }
+      const { rerender } = render(<ChatThread turns={[first]} counts={someReady} />)
+      expect(scrollIntoView).not.toHaveBeenCalled()
+
+      const asked: ChatTurn = { id: '2', question: 'Two?', status: 'loading' }
+      rerender(<ChatThread turns={[first, asked]} counts={someReady} />)
+      expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+      const answered: ChatTurn = { ...asked, status: 'answered', answer: 'Two', sources: [] }
+      rerender(<ChatThread turns={[first, answered]} counts={someReady} />)
+      expect(scrollIntoView).toHaveBeenCalledTimes(2)
+      expect(scrollIntoView).toHaveBeenLastCalledWith(expect.objectContaining({ block: 'start' }))
+    })
   })
 })

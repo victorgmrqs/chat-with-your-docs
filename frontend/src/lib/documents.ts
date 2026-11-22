@@ -1,4 +1,6 @@
 // View types for the document sidebar, shaped after the API's DocumentResponse (DOM-02, DOM-03).
+import type { DocumentResponse } from '@/api/client'
+
 export type DocumentStatus = 'indexing' | 'ready' | 'failed'
 
 export interface DocumentItem {
@@ -16,6 +18,9 @@ export interface DocumentCounts {
   indexing: number
   failed: number
 }
+
+/** DOM-01: the file extensions the API accepts (it decides; the picker only filters). */
+export const ACCEPTED_EXTENSIONS: readonly DocumentResponse['format'][] = ['pdf', 'md', 'txt']
 
 /** DOM-16: the formats accepted by DOM-01, in user-facing words. */
 export const ACCEPTED_FORMATS = '.pdf with selectable text, .md or .txt'
@@ -35,4 +40,15 @@ export function formatCounts(counts: DocumentCounts): string {
   ]
     .filter(Boolean)
     .join(' · ')
+}
+
+export function toDocumentItem(response: DocumentResponse): DocumentItem {
+  return {
+    id: response.id,
+    filename: response.filename,
+    status: response.status,
+    failureMessage: response.failure_message,
+    // DOM-03/04: only a transient failure is indexed again when the same file is uploaded.
+    canRetry: response.failure_reason === 'indexing_failed',
+  }
 }

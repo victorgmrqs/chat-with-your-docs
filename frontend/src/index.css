@@ -11,10 +11,22 @@
   }
 
   * {
-    @apply border-border outline-ring/50;
+    @apply border-border outline-ring;
+  }
+
+  /* One solid focus indicator for everything focusable (buttons, inputs, citation links,
+     scroll areas): the 2px offset keeps it visible on filled controls such as Send. */
+  :focus-visible {
+    @apply outline-2 outline-offset-2;
   }
 
   body {
     @apply bg-background font-sans text-foreground antialiased;
   }
+}
+
+/* A region that scrolls on its own in the app shell (md and up). Chrome makes scroll areas
+   keyboard-focusable; the outline goes inside, or the shell's edge clips it. */
+@utility scroll-area {
+  @apply focus-visible:-outline-offset-2 md:min-h-0 md:overflow-y-auto;
 }

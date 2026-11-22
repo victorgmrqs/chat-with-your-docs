@@ -26,7 +26,7 @@ Change a rule here first, then the code.
 | DOM-12 | Technical failures (provider timeout, provider error, model refusal or content filter, invalid structured output after the adapter's retries) are reported as errors, `504 chat_timeout` or `502 chat_unavailable` (`502 retrieval_unavailable` when the question cannot be embedded), never as `insufficient_evidence`. Logs carry diagnostic signals only (error type, provider, model, timings), never question, prompt, chunk or answer text. |
 | DOM-13 | The chat provider and model come only from configuration (`CHAT_PROVIDER`, `CHAT_MODEL`). Every answer records the provider and model that produced it, in the response and in its content-free log line. |
 
-## Interface (CWYD-10)
+## Interface (CWYD-10, CWYD-5)
 
 | ID | Rule |
 |---|---|
@@ -34,3 +34,5 @@ Change a rule here first, then the code.
 | DOM-15 | Red (`destructive`, `status-failed`) is reserved for failures: a failed document, a failed upload, a request error. "Not enough evidence" is a normal outcome: it uses neutral colors, and its related passage is shown in a dashed box, never with a citation number. |
 | DOM-16 | Copy about accepted files names the formats of DOM-01: a `.pdf` with selectable text, a `.md` or a `.txt`. This overrides the PDF-only copy in the design PNGs. Failure and rejection messages are the backend's own (DOM-01, DOM-03). |
 | DOM-17 | The question input and Send are disabled while no document is `ready` and while an answer is loading; the hint says why. Asking while other documents are indexing is allowed, and a banner says only Ready documents are searched. |
+| DOM-18 | A question that fails stays in the thread with the backend's message. Retry sends the same question again in place, and is offered only for failures that can pass on a second try: network errors and `5xx` (`chat_unavailable`, `retrieval_unavailable`, `chat_timeout`, `database_unavailable`). A `4xx` rejection (`empty_question`, `question_too_long`, `no_ready_documents`) shows its message without Retry. A document that failed with `indexing_failed` is retried by uploading the same file again: the file kept from this session, or the file picker after a reload. |
+| DOM-19 | Document statuses and counters come only from the API. The list is loaded on start and fetched again every 2 s while any document is `indexing`; polling stops when none is, and a failed fetch does not stop it. An upload's response is shown at once; a list fetched before that upload is discarded and fetched again. Until the first fetch answers, the collection is unknown, not empty: the screen shows a loading state (or the load error), never "No documents yet" or counters. |
