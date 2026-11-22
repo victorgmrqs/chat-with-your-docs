@@ -1,16 +1,20 @@
-/* Base only. Design tokens and Tailwind v4 arrive in CWYD-10. */
-:root {
-  font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
-  color-scheme: light;
-}
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+@import "./styles/theme.css";
 
-body {
-  margin: 0;
-}
+/* DOM-14: one light theme, Inter, borders instead of shadows. */
+@layer base {
+  :root {
+    color-scheme: light;
+  }
 
-main {
-  max-width: 64rem;
-  margin: 0 auto;
-  padding: 2rem 1rem;
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background font-sans text-foreground antialiased;
+  }
 }
