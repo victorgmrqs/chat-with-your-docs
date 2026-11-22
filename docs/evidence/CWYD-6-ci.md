@@ -6,8 +6,8 @@ Workflow: `.github/workflows/ci.yml`. Date: 2026-11-22.
 
 ## container_pipeline_success
 
-**Pull request (checks + image build + scan, no publish).** PR #7, commit `3ea3c28`,
-[run 45058417017](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45058417017):
+**Pull request (checks + image build + scan, no publish).** PR #7, commit `430d4cb`,
+[run 45059188060](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45059188060):
 
 ```text
 conclusion: success
@@ -71,7 +71,7 @@ publish: skipped
 
 Fix (commit `8f28623`): the backend runtime stage upgrades its Debian packages and removes
 the unused system pip (the app runs from the uv venv); the frontend moved to the nginx 1.31
-mainline image and upgrades its Alpine packages. Both images pass the scan in run 45058417017
+mainline image and upgrades its Alpine packages. Both images pass the scan in run 45059188060
 above, and `docker compose up --build --wait` reaches healthy for db, backend and frontend, with
 `/`, `/api/health/ready` (through nginx) and `:8000/health/ready` answering 200.
 
