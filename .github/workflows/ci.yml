@@ -221,13 +221,14 @@ jobs:
           IMAGE: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.component }}
         run: |
           gunzip -c "${{ matrix.component }}.tar.gz" | docker load
-          docker push --all-tags "$IMAGE"
+          # Every tag points to the same manifest; the registry reports its digest on push.
+          digest=$(docker push --all-tags "$IMAGE" | tee /dev/stderr | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1)
           {
             echo "### ${{ matrix.component }}"
             echo
-            docker image ls --digests --format '- Digest: `{{.Repository}}@{{.Digest}}`' "$IMAGE" | head -n 1
+            echo "- Digest: \`$IMAGE@$digest\`"
             docker image ls --format '- Tag: `{{.Repository}}:{{.Tag}}`' "$IMAGE"
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
 
   ci-gate:
     name: ci-gate
