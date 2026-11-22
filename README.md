@@ -250,8 +250,8 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 | `changes` | Path filter: `backend/**` and `db/**` select the backend, `frontend/**` the frontend (a change to the workflow selects both) |
 | `backend checks` | `uv sync --locked`, ruff (lint + format), mypy, pytest with integration tests on testcontainers, and a check that `frontend/openapi.json` matches the API |
 | `frontend checks` | `npm ci`, ESLint, `tsc -b`, Vitest, and a check that `src/api/schema.d.ts` matches `openapi.json` |
-| `image <component>` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
-| `publish <component>` | Pushes the scanned image to GHCR (never on pull requests) |
+| `image (<component>)` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
+| `publish (<component>)` | Pushes the scanned image to GHCR (never on pull requests) |
 | `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
 
 `ci-gate` is the only required status check on `development` and `main`, so a PR that touches

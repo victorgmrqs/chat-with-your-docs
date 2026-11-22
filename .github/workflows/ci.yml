@@ -140,7 +140,7 @@ jobs:
             || { echo "::error::src/api/schema.d.ts is stale: run 'npm run api:types' in frontend/"; exit 1; }
 
   image:
-    name: image ${{ matrix.component }}
+    name: image
     needs: [changes, backend, frontend]
     # Runs only when no check failed; a check skipped by the path filter does not block.
     if: >-
@@ -200,7 +200,7 @@ jobs:
           compression-level: 0
 
   publish:
-    name: publish ${{ matrix.component }}
+    name: publish
     needs: [changes, image]
     # Every check and every scan must have passed: one failing image blocks both publishes.
     if: >-
