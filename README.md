@@ -279,7 +279,8 @@ a release tag (`1.2.0`). Each publish job writes the digest in the run summary. 
 digest: it is the only immutable reference, since a later rebuild of the same commit (a release
 tag, or the daily OS-upgrade refresh) pushes a new image under the same `sha-` tag. A burst of
 pushes to `development` runs only the first and the last commit; the ones in between get no
-images. The *Run workflow* button appears once `ci.yml` is on `main`, the default branch. Third-party actions are pinned by commit SHA.
+images. The *Run workflow* button appears once `ci.yml` is on `main`, the default branch.
+Third-party actions are pinned by commit SHA.
 
 ## Repository layout
 

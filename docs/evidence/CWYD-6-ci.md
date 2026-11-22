@@ -73,7 +73,8 @@ publish: skipped
 ci-gate: failure
 ```
 
-**A failed scan blocks publishing.** The first run on PR #7, commit `de4f6d6`,
+**A failed scan blocks publishing.** The first run on PR #7, commit `2e70d0a` (the images were
+tagged `sha-de4f6d6`, the PR merge commit),
 [run 45057457625](https://github.com/victorgmrqs/chat-with-your-docs/actions/runs/45057457625),
 passed every check and failed both scans on real vulnerabilities in the base images:
 
