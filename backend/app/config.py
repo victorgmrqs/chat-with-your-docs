@@ -28,6 +28,19 @@ class Settings(BaseSettings):
     # DOM-06: single-owner MVP; the application sets the owner, never the client.
     default_owner_id: uuid.UUID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
+    # Answering (CWYD-4). Defaults are starting points; the RAG evaluation (CWYD-11) tunes them.
+    question_max_chars: int = Field(default=2000, gt=0)  # DOM-07
+    retrieval_candidates: int = Field(default=20, gt=0)  # per branch, before fusion
+    retrieval_top_k: int = Field(default=6, gt=0)  # fused chunks considered for the prompt
+    min_relevance: float = Field(default=0.30, ge=0, le=1)  # DOM-08: cosine floor
+    rerank_enabled: bool = False  # DOM-11
+    rerank_top_n: int = Field(default=4, gt=0)
+    context_token_budget: int = Field(default=3000, gt=0)  # DOM-11
+    answer_max_tokens: int = Field(default=800, gt=0)
+    # Per attempt; the client retries timeouts and 429/5xx up to CHAT_MAX_RETRIES times.
+    chat_timeout_seconds: float = Field(default=30, gt=0)
+    chat_max_retries: int = Field(default=2, ge=0)
+
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 
     @field_validator("database_url")
@@ -47,6 +60,12 @@ class Settings(BaseSettings):
     def _overlap_smaller_than_chunk(self) -> Self:
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("CHUNK_OVERLAP must be smaller than CHUNK_SIZE")
+        return self
+
+    @model_validator(mode="after")
+    def _top_k_within_candidates(self) -> Self:
+        if self.retrieval_top_k > 2 * self.retrieval_candidates:
+            raise ValueError("RETRIEVAL_TOP_K cannot exceed twice RETRIEVAL_CANDIDATES")
         return self
 
     @property

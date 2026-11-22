@@ -2,9 +2,63 @@
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Protocol
 
+from pydantic import BaseModel
+
+from app.domain.answers import RetrievedChunk
 from app.domain.documents import Chunk, Document, DocumentFormat, FailureReason, Section
+
+
+@dataclass(frozen=True, slots=True)
+class ChatPrompt:
+    system: str
+    user: str
+
+
+class ChatModelPort(Protocol):
+    """Structured-output chat model (OpenAI or Anthropic, chosen by configuration, DOM-13)."""
+
+    @property
+    def provider(self) -> str: ...
+
+    @property
+    def model(self) -> str: ...
+
+    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> T:
+        """A validated instance of `schema`.
+
+        Raises ChatModelTimeout or ChatModelUnavailable (DOM-12) after the adapter's retries.
+        """
+        ...
+
+
+class RetrieverPort(Protocol):
+    async def has_ready_documents(self, owner_id: uuid.UUID) -> bool: ...
+
+    async def search(
+        self,
+        owner_id: uuid.UUID,
+        query_text: str,
+        query_embedding: Sequence[float],
+        *,
+        candidates: int,
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        """Hybrid search over the owner's Ready chunks (DOM-07), best fused score first.
+
+        `candidates` per branch (vector, full-text) before fusion; `limit` after it.
+        """
+        ...
+
+
+class RerankerPort(Protocol):
+    async def rerank(
+        self, question: str, chunks: Sequence[RetrievedChunk], top_n: int
+    ) -> list[RetrievedChunk]:
+        """At most `top_n` of `chunks`, most relevant first. Raises like ChatModelPort."""
+        ...
 
 
 class EmbeddingUnavailable(Exception):

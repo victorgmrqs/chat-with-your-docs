@@ -96,3 +96,28 @@ def test_load_settings_rejects_overlap_not_smaller_than_chunk_size(
 
     with pytest.raises(ConfigurationError, match="CHUNK_OVERLAP must be smaller than CHUNK_SIZE"):
         load_settings()
+
+
+def test_load_settings_answering_defaults(valid_env: pytest.MonkeyPatch) -> None:
+    settings = load_settings()
+
+    assert (settings.rerank_enabled, settings.min_relevance, settings.retrieval_top_k) == (
+        False,
+        0.30,
+        6,
+    )
+
+
+def test_load_settings_rejects_top_k_beyond_candidates(valid_env: pytest.MonkeyPatch) -> None:
+    valid_env.setenv("RETRIEVAL_CANDIDATES", "2")
+    valid_env.setenv("RETRIEVAL_TOP_K", "5")
+
+    with pytest.raises(ConfigurationError, match="RETRIEVAL_TOP_K cannot exceed"):
+        load_settings()
+
+
+def test_load_settings_rejects_min_relevance_above_one(valid_env: pytest.MonkeyPatch) -> None:
+    valid_env.setenv("MIN_RELEVANCE", "1.5")
+
+    with pytest.raises(ConfigurationError, match="MIN_RELEVANCE"):
+        load_settings()
