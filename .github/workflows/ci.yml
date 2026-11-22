@@ -36,6 +36,7 @@ jobs:
   changes:
     name: changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       pull-requests: read
     outputs:
@@ -69,6 +70,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         shell: bash
@@ -103,6 +105,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         shell: bash
@@ -133,14 +136,16 @@ jobs:
   image:
     name: image
     needs: [changes, backend, frontend]
-    # Runs only when no check failed; a check skipped by the path filter does not block.
+    # Runs only when every check passed; a check skipped by the path filter does not block, a
+    # failed or cancelled (e.g. timed out) one does.
     if: >-
       !cancelled()
       && needs.changes.result == 'success'
       && needs.changes.outputs.components != '[]'
-      && needs.backend.result != 'failure'
-      && needs.frontend.result != 'failure'
+      && contains(fromJSON('["success","skipped"]'), needs.backend.result)
+      && contains(fromJSON('["success","skipped"]'), needs.frontend.result)
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -208,6 +213,7 @@ jobs:
     # publishes nothing.
     if: needs.changes.outputs.publish == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: read
       packages: write
@@ -246,6 +252,7 @@ jobs:
     needs: [changes, backend, frontend, image, publish]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Fail if any job failed or was cancelled
         env:
