@@ -7,10 +7,8 @@ those passages from the real database, and citations resolve to the right file a
 """
 
 import json
-import re
 import uuid
 from collections.abc import Callable, Iterator
-from html import unescape
 from typing import Any
 
 import pytest
@@ -22,7 +20,7 @@ from app.application.prompts import AnswerDraft
 from app.domain.answers import INSUFFICIENT_EVIDENCE_MESSAGE, ChatModelTimeout, ChatModelUnavailable
 from app.main import create_app
 from tests.factories import BACKEND_DIR, EMBEDDING_DIMENSIONS, fixture_bytes, make_settings
-from tests.fakes import FakeChatModel, KeywordEmbeddings, Reply
+from tests.fakes import FakeChatModel, KeywordEmbeddings, Reply, prompt_sources
 
 pytestmark = pytest.mark.integration
 
@@ -31,18 +29,13 @@ CASES = {
     for case in json.loads((BACKEND_DIR / "tests/fixtures/rag_cases.json").read_text())["cases"]
 }
 DOCUMENTS = ("remote-work-policy.pdf", "expense-policy.pdf", "parental-leave-policy.md")
-_SOURCE = re.compile(r'<source id="(S\d+)"[^>]*>\n(.*?)\n</source>', re.DOTALL)
 
 ClientFactory = Callable[..., TestClient]
 
 
-def _sources(prompt: ChatPrompt) -> dict[str, str]:
-    return {label: unescape(body) for label, body in _SOURCE.findall(prompt.user)}
-
-
 def _oracle(case: dict[str, Any]) -> Callable[[ChatPrompt], AnswerDraft]:
     def reply(prompt: ChatPrompt) -> AnswerDraft:
-        sources = _sources(prompt)
+        sources = prompt_sources(prompt)
 
         def label_of(phrase: str) -> str | None:
             return next((label for label, body in sources.items() if phrase in body), None)

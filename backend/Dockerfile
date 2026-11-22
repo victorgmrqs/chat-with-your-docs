@@ -8,7 +8,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-dev --no-install-project
 
-FROM python:3.14-slim-trixie
+FROM python:3.14-slim-trixie AS runtime
 # Security fixes not yet in the base image (CI passes a daily UPGRADE_EPOCH so the build cache
 # does not keep a stale upgrade layer), and no system pip: the app runs from the uv venv, and
 # pip's vendored libraries (msgpack, setuptools, urllib3) were the image's open CVEs (CWYD-6).
@@ -29,3 +29,13 @@ USER app
 EXPOSE 8000
 # Schema first (A1): a failed migration stops the container instead of serving a stale schema.
 CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+# RAG evaluation (CWYD-11), built only by the Compose `eval` profile: the runtime image plus the
+# eval package and the fixture documents it indexes. Reports go to a mounted directory.
+FROM runtime AS eval
+COPY eval ./eval
+COPY tests/fixtures/documents ./fixtures
+CMD ["python", "-m", "eval.run", "--documents", "/app/fixtures", "--out", "/app/reports"]
+
+# Default target (CI, `docker compose up`): the API image, without the eval stage.
+FROM runtime

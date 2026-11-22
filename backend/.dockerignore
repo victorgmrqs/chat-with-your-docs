@@ -4,4 +4,5 @@
 .ruff_cache
 .pytest_cache
 tests
+!tests/fixtures/documents
 .env*

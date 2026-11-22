@@ -6,6 +6,7 @@ import re
 import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import replace
+from html import unescape
 from typing import Any
 
 from pydantic import BaseModel
@@ -151,6 +152,14 @@ class KeywordEmbeddings:
             vector[0] = 1.0
             return vector
         return [value / norm for value in vector]
+
+
+_SOURCE = re.compile(r'<source id="(S\d+)"[^>]*>\n(.*?)\n</source>', re.DOTALL)
+
+
+def prompt_sources(prompt: ChatPrompt) -> dict[str, str]:
+    """Label -> unescaped text of each source the use case put in the prompt (oracle fakes)."""
+    return {label: unescape(body) for label, body in _SOURCE.findall(prompt.user)}
 
 
 Reply = BaseModel | Exception | Callable[[ChatPrompt], BaseModel]

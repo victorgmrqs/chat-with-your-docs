@@ -83,7 +83,10 @@ docs_map:
     # `npm --prefix frontend run api:types`; MSW handlers are typed from the same schema.
     update: ["frontend/openapi.json", "frontend/src/api/schema.d.ts"]
     severity: blocker
-  # TODO(CWYD-11): eval script/dataset changes → docs/eval/ report
+  - if_diff_touches: "backend/eval/**"
+    # Re-run `docker compose --profile eval run --build --rm eval` and commit the regenerated reports.
+    update: ["docs/eval/README.md", "docs/eval/comparison.md"]
+    severity: warning
 
 documentation_policy:
   changelog:

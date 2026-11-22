@@ -60,5 +60,25 @@ services:
       start_period: 30s
       start_interval: 1s
 
+  # RAG evaluation (CWYD-11): `docker compose --profile eval run --build --rm eval`.
+  # API image plus eval code and fixtures (Dockerfile target `eval`); reports go to docs/eval/.
+  eval:
+    profiles: [eval]
+    build:
+      context: ./backend
+      target: eval
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cwyd}:${POSTGRES_PASSWORD:-cwyd}@db:5432/${POSTGRES_DB:-cwyd}
+    # Host user, so the reports in the bind mount stay editable (override with EVAL_UID/EVAL_GID).
+    user: "${EVAL_UID:-1000}:${EVAL_GID:-1000}"
+    volumes:
+      - ./docs/eval:/app/reports  # output only; inputs are baked into the image
+    depends_on:
+      backend:  # applies the migrations
+        condition: service_healthy
+
 volumes:
   db-data:

@@ -1,0 +1,31 @@
+# Configurations compared by `python -m eval.run` (CWYD-11). `settings` overrides the
+# environment's Settings (app/config.py field names); everything else comes from .env.
+
+# Chat model prices in USD per million tokens, matched by prefix of the model name the provider
+# reports. Snapshot 2026-11-22 (Anthropic API pricing); update when models or prices change.
+# A model missing here makes the report show the cost as n/a, never a wrong number.
+# Embedding calls are not priced: one short query embedding per question is negligible next to
+# the chat call, and document indexing is a one-off.
+prices_usd_per_million_tokens:
+  claude-haiku-5-5: {input: 0.10, output: 0.50}
+
+configurations:
+  - name: baseline
+    description: Application defaults — hybrid retrieval (vector + full-text, RRF), reranker off, chunks of 1000/150 characters, MIN_RELEVANCE 0.30.
+    settings: {}
+
+  - name: rerank
+    description: Baseline with the LLM reranker on (RERANK_ENABLED=true, top 4) — one extra chat call per question with evidence.
+    settings:
+      rerank_enabled: true
+
+  - name: small-chunks
+    description: Baseline with chunks of 120/20 characters — fixture pages and sections are under 300 characters, so only chunks this small split them (closer to one sentence per chunk).
+    settings:
+      chunk_size: 120
+      chunk_overlap: 20
+
+  - name: strict-relevance
+    description: Baseline with MIN_RELEVANCE 0.45 — a stricter evidence gate (DOM-08), aimed at refusing unrelated questions without calling the chat model.
+    settings:
+      min_relevance: 0.45
