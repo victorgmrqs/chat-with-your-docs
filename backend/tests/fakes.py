@@ -1,12 +1,17 @@
 """Declared fakes implementing the application ports. No network calls in tests."""
 
 import hashlib
+import math
+import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from typing import Any
 
-from app.application.ports import EmbeddingUnavailable
+from pydantic import BaseModel
+
+from app.application.ports import ChatPrompt, EmbeddingUnavailable
+from app.domain.answers import RetrievedChunk
 from app.domain.documents import Chunk, Document, DocumentStatus, FailureReason
 
 
@@ -84,3 +89,115 @@ class InMemoryDocumentRepository:
         document = replace(self.documents[document_id], **changes)
         self.documents[document_id] = document
         return document
+
+
+_STOPWORDS = frozenset(
+    [
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "how",
+        "i",
+        "in",
+        "is",
+        "it",
+        "my",
+        "of",
+        "on",
+        "or",
+        "the",
+        "this",
+        "to",
+        "what",
+        "when",
+        "which",
+        "who",
+        "why",
+        "with",
+    ]
+)
+
+
+class KeywordEmbeddings:
+    """Bag-of-words vectors: cosine similarity reflects shared words (no semantics).
+
+    Lets tests exercise the vector branch and the relevance gate without a provider.
+    """
+
+    def __init__(self, dimensions: int) -> None:
+        self.dimensions = dimensions
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        return [self._vector(text) for text in texts]
+
+    def _vector(self, text: str) -> list[float]:
+        vector = [0.0] * self.dimensions
+        for word in re.findall(r"[a-z0-9]+", text.lower()):
+            if word not in _STOPWORDS:
+                digest = hashlib.sha256(word.encode()).digest()
+                vector[int.from_bytes(digest[:4]) % self.dimensions] += 1.0
+        norm = math.sqrt(sum(value * value for value in vector))
+        if norm == 0:  # only stopwords: any fixed non-zero vector (cosine needs a norm)
+            vector[0] = 1.0
+            return vector
+        return [value / norm for value in vector]
+
+
+Reply = BaseModel | Exception | Callable[[ChatPrompt], BaseModel]
+
+
+class FakeChatModel:
+    """ChatModelPort returning scripted replies in call order; records every prompt.
+
+    A reply is a schema instance, an exception to raise, or a callable that builds the
+    instance from the prompt (for tests that need the labels the use case assigned).
+    """
+
+    provider = "fake"
+    model = "fake-chat-model"
+
+    def __init__(self, *replies: Reply) -> None:
+        self._replies = list(replies)
+        self.prompts: list[ChatPrompt] = []
+
+    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> T:
+        self.prompts.append(prompt)
+        reply = self._replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
+        result = reply if isinstance(reply, BaseModel) else reply(prompt)
+        if not isinstance(result, schema):
+            raise TypeError(f"scripted reply {type(result).__name__} is not a {schema.__name__}")
+        return result
+
+
+class FakeRetriever:
+    """RetrieverPort returning fixed chunks (at most `limit`)."""
+
+    def __init__(self, chunks: Sequence[RetrievedChunk] = (), *, has_ready: bool = True) -> None:
+        self.chunks = list(chunks)
+        self.has_ready = has_ready
+
+    async def has_ready_documents(self, owner_id: uuid.UUID) -> bool:
+        return self.has_ready
+
+    async def search(
+        self,
+        owner_id: uuid.UUID,
+        query_text: str,
+        query_embedding: Sequence[float],
+        *,
+        candidates: int,
+        limit: int,
+    ) -> list[RetrievedChunk]:
+        return self.chunks[:limit]

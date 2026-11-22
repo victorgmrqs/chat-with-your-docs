@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.community.postgres import PostgresContainer
 
 from app.config import Settings
+from app.domain.answers import RetrievedChunk
 from app.domain.documents import Document, DocumentFormat, DocumentStatus
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
@@ -50,6 +51,22 @@ def make_document(**overrides: Any) -> Document:
         updated_at=now,
     )
     return replace(document, **overrides)
+
+
+def make_retrieved_chunk(**overrides: Any) -> RetrievedChunk:
+    """A retrieved chunk that passes the relevance gate; tests override what they are about."""
+    chunk = RetrievedChunk(
+        chunk_id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        filename="expense-policy.pdf",
+        page=2,
+        heading=None,
+        text="Coworking reimbursement is limited to US$ 250 per month per employee.",
+        score=0.03,
+        similarity=0.8,
+        fts_matched=True,
+    )
+    return replace(chunk, **overrides)
 
 
 def fixture_bytes(name: str) -> bytes:

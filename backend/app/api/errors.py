@@ -5,6 +5,14 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.adapters.postgres_connection import DatabaseUnavailable
+from app.domain.answers import (
+    ChatModelTimeout,
+    ChatModelUnavailable,
+    EmptyQuestion,
+    NoReadyDocuments,
+    QuestionTooLong,
+    RetrievalUnavailable,
+)
 from app.domain.documents import (
     DocumentNotFound,
     DomainError,
@@ -18,6 +26,13 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
     FileTooLarge: status.HTTP_413_CONTENT_TOO_LARGE,
     EmptyFile: status.HTTP_400_BAD_REQUEST,
     DocumentNotFound: status.HTTP_404_NOT_FOUND,
+    EmptyQuestion: status.HTTP_400_BAD_REQUEST,
+    QuestionTooLong: status.HTTP_400_BAD_REQUEST,
+    NoReadyDocuments: status.HTTP_409_CONFLICT,
+    # DOM-12: technical failures, never reported as insufficient evidence.
+    ChatModelUnavailable: status.HTTP_502_BAD_GATEWAY,
+    RetrievalUnavailable: status.HTTP_502_BAD_GATEWAY,
+    ChatModelTimeout: status.HTTP_504_GATEWAY_TIMEOUT,
 }
 
 
