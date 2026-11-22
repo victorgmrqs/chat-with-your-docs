@@ -23,6 +23,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+defaults:
+  run:
+    # Explicit bash runs with -eo pipefail; the implicit default is only -e, which hides a failure
+    # on the left of a pipe (docker push | ..., docker save | gzip).
+    shell: bash
+
 env:
   REGISTRY: ghcr.io
 
@@ -65,6 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
+        shell: bash
         working-directory: backend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -98,6 +105,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
+        shell: bash
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -128,6 +136,7 @@ jobs:
     # Runs only when no check failed; a check skipped by the path filter does not block.
     if: >-
       !cancelled()
+      && needs.changes.result == 'success'
       && needs.changes.outputs.components != '[]'
       && needs.backend.result != 'failure'
       && needs.frontend.result != 'failure'
@@ -222,7 +231,9 @@ jobs:
         run: |
           gunzip -c "${{ matrix.component }}.tar.gz" | docker load
           # Every tag points to the same manifest; the registry reports its digest on push.
-          digest=$(docker push --all-tags "$IMAGE" | tee /dev/stderr | grep -oE 'sha256:[0-9a-f]{64}' | head -n 1)
+          docker push --all-tags "$IMAGE" | tee push.log
+          digest=$(grep -m 1 -oE 'sha256:[0-9a-f]{64}' push.log) \
+            || { echo "::error::docker push reported no digest"; exit 1; }
           {
             echo "### ${{ matrix.component }}"
             echo

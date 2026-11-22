@@ -14,7 +14,7 @@ FROM python:3.14-slim-trixie
 # pip's vendored libraries (msgpack, setuptools, urllib3) were the image's open CVEs (CWYD-6).
 ARG UPGRADE_EPOCH
 RUN apt-get update \
-    && apt-get upgrade -y --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf "$(python -c 'import ensurepip, os; print(os.path.dirname(ensurepip.__file__))')" \
     && python -m pip uninstall -y --root-user-action=ignore pip \
