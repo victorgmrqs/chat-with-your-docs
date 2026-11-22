@@ -28,6 +28,13 @@ All notable changes to this project are documented here. The format follows
   sidebar, chat thread, answer with numbered sources, loading, error and "Not enough evidence"
   states, composed into the five handoff screens on a dev-only preview page
   ([CWYD-10](https://goncalvesmarques.atlassian.net/browse/CWYD-10)).
+- The screen now uploads documents, tracks indexing, asks questions and shows citations through
+  the real API: statuses refresh every 2 s while a document is indexing, a failed question stays
+  in the thread with Retry only for transient failures, and the client is typed from the API's
+  OpenAPI schema (`npm run api:types`); `VITE_API_MOCKS=true npm run dev` runs the app without
+  the backend. The sidebar stays fixed while the conversation scrolls, the list shows a loading
+  state instead of looking empty, and focus is a solid, visible outline
+  ([CWYD-5](https://goncalvesmarques.atlassian.net/browse/CWYD-5)).
 
 ### Maintenance
 

@@ -1,4 +1,5 @@
 import { ArrowUpFromLine, Info } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 
 import { AnswerCard } from '@/components/AnswerCard'
 import { ErrorCard } from '@/components/ErrorCard'
@@ -20,19 +21,25 @@ interface ChatThreadProps {
 }
 
 export function ChatThread({ turns, counts, onUpload, onRetry, onRephrase, className }: ChatThreadProps) {
-  const noDocuments = counts.ready + counts.indexing + counts.failed === 0
+  const latestTurn = useScrollToLatestTurn(turns)
+  // Nothing searchable yet (no document, or all failed): invite an upload instead of a blank column.
+  const nothingSearchable = counts.ready + counts.indexing === 0
 
-  if (noDocuments && turns.length === 0) {
-    return <EmptyCollection onUpload={onUpload} className={className} />
+  if (nothingSearchable && turns.length === 0) {
+    return <EmptyCollection onUpload={onUpload} className={cn('scroll-area', className)} />
   }
 
   return (
-    <section aria-label="Conversation" className={cn('px-10 py-8', className)}>
+    <section aria-label="Conversation" className={cn('scroll-area px-10 py-8', className)}>
       <div className="mx-auto flex max-w-205 flex-col gap-6">
         {counts.indexing > 0 && <IndexingBanner counts={counts} />}
         <div aria-live="polite" className="flex flex-col gap-6">
           {turns.map((turn, index) => (
-            <div key={turn.id} className="flex flex-col gap-6">
+            <div
+              key={turn.id}
+              ref={index === turns.length - 1 ? latestTurn : undefined}
+              className="flex scroll-mt-6 flex-col gap-6"
+            >
               <QuestionBubble question={turn.question} />
               <TurnResult
                 turn={turn}
@@ -47,6 +54,27 @@ export function ChatThread({ turns, counts, onUpload, onRetry, onRephrase, class
       </div>
     </section>
   )
+}
+
+/**
+ * Scrolls the latest turn into view when a question is sent and when its answer arrives, so the
+ * answer reads from its question down. Not on mount: an existing thread keeps its position.
+ */
+function useScrollToLatestTurn(turns: readonly ChatTurn[]) {
+  const latestTurn = useRef<HTMLDivElement>(null)
+  const last = turns.at(-1)
+  const key = last ? `${last.id}:${last.status}` : ''
+  const previousKey = useRef(key)
+
+  useEffect(() => {
+    if (key === previousKey.current) return
+    previousKey.current = key
+    const reduceMotion = globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+    // Optional call: jsdom has no scrollIntoView.
+    latestTurn.current?.scrollIntoView?.({ block: 'start', behavior: reduceMotion ? 'auto' : 'smooth' })
+  }, [key])
+
+  return latestTurn
 }
 
 function TurnResult({
@@ -77,7 +105,13 @@ function TurnResult({
         />
       )
     case 'error':
-      return <ErrorCard message={turn.message} onRetry={onRetry ? () => onRetry(turn) : undefined} />
+      return (
+        <ErrorCard
+          message={turn.message}
+          // DOM-18: only a transient failure can succeed by sending the same question again.
+          onRetry={turn.retryable && onRetry ? () => onRetry(turn) : undefined}
+        />
+      )
   }
 }
 
