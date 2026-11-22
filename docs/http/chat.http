@@ -1,0 +1,70 @@
+# CWYD-4 — answers with verifiable citations. Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client), from the repository root.
+# Prerequisite: upload remote-work-policy.pdf, expense-policy.pdf and parental-leave-policy.md
+# with docs/http/documents.http and wait until all three are `ready`.
+# Expected evidence per case: backend/tests/fixtures/rag_cases.json.
+# Provider switch: set CHAT_PROVIDER=anthropic (+ CHAT_MODEL, ANTHROPIC_API_KEY) in .env,
+# `docker compose up -d backend`, and run the same requests: `provider`/`model` change.
+
+# From inside the dev container set @host = host.docker.internal.
+@host = localhost
+@api = http://{{host}}:8000
+@web = http://{{host}}:8080/api
+
+### rag_answer_success: 200 outcome "answered", two sources numbered 1 and 2:
+### remote-work-policy.pdf page 2 ("requires prior manager approval") and
+### expense-policy.pdf page 2 ("US$ 250 per month"); answer text uses [1] and [2].
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "Can I work from a coworking space, and what is the monthly reimbursement limit?"}
+
+### rag_answer_insufficient_evidence: 200 outcome "insufficient_evidence", sources [],
+### fixed answer "Not enough evidence in your documents...", related_passage from
+### parental-leave-policy.md (Eligibility, "only to full-time employees"), no citation number.
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "What is the parental leave policy for contractors?"}
+
+### rag_hybrid_exact_term: 200 answered, cites expense-policy.pdf page 2 (full-text branch)
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "Which policy mentions US$ 250?"}
+
+### Through nginx (same contract under /api): 200
+POST {{web}}/chat
+Content-Type: application/json
+
+{"question": "Can I work from a coworking space?"}
+
+### empty_question: 400 {"code":"empty_question","detail":"The question is empty. ..."}
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "   "}
+
+### control_characters: 200; NUL and other control characters are removed before searching
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "Which policy mentions\u0000 US$ 250?"}
+
+### question_too_long: 400 {"code":"question_too_long"} (QUESTION_MAX_CHARS, default 2000)
+# Generate a longer body to try it; omitted here to keep the file readable.
+
+### no_ready_documents: 409 {"code":"no_ready_documents"}
+# Run on an empty database (`docker compose down -v && docker compose up --build --wait`).
+POST {{api}}/chat
+Content-Type: application/json
+
+{"question": "Anything?"}
+
+### rag_answer_provider_timeout: 504 {"code":"chat_timeout"}; provider error: 502 chat_unavailable
+# Set CHAT_TIMEOUT_SECONDS=0.01 and CHAT_MAX_RETRIES=0 in .env, `docker compose up -d backend`
+# and repeat the first request. `docker compose logs backend` shows error_type/provider/model,
+# never the question or answer.
+
+### Reranker: set RERANK_ENABLED=true, `docker compose up -d backend`, repeat the first request:
+### 200 with "reranked": true (false if the reranker call failed and the fused order was used).

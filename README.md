@@ -43,6 +43,16 @@ Every variable is listed in [`.env.example`](.env.example).
 | `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
 | `CHUNK_OVERLAP`     | no (150)                       | Overlap between chunks; smaller than the size   |
 | `DEFAULT_OWNER_ID`  | no                             | Owner of every document (single-user MVP)       |
+| `QUESTION_MAX_CHARS` | no (2000)                     | Longer questions get `400 question_too_long`    |
+| `RETRIEVAL_CANDIDATES` | no (20)                     | Chunks per search branch (vector, full-text)    |
+| `RETRIEVAL_TOP_K`   | no (6)                         | Fused chunks considered for the prompt; at most twice `RETRIEVAL_CANDIDATES` |
+| `MIN_RELEVANCE`     | no (0.30)                      | Cosine floor (0-1) for vector-only hits         |
+| `RERANK_ENABLED`    | no (false)                     | One extra chat call that reranks the evidence   |
+| `RERANK_TOP_N`      | no (4)                         | Chunks kept by the reranker                     |
+| `CONTEXT_TOKEN_BUDGET` | no (3000)                   | Token budget of the sources in the prompt       |
+| `ANSWER_MAX_TOKENS` | no (800)                       | Maximum answer length in tokens                 |
+| `CHAT_TIMEOUT_SECONDS` | no (30)                     | Per-attempt chat provider timeout               |
+| `CHAT_MAX_RETRIES`  | no (2)                         | Retries on timeouts, 429 and 5xx                |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
 running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at
@@ -90,6 +100,42 @@ curl -s localhost:8000/documents        # all documents, newest first
   starts; upload it again to retry.
 - Every request in [`docs/http/documents.http`](docs/http/documents.http) can be run against the
   Compose stack. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-01..06).
+
+## Chat
+
+Ask a question about the Ready documents. The answer cites its sources with `[n]` markers, or
+says "Not enough evidence" when the documents do not support one.
+
+```bash
+curl -s localhost:8000/chat -H 'Content-Type: application/json' \
+  -d '{"question": "What is the monthly coworking reimbursement limit?"}'
+# {"outcome":"answered","answer":"... US$ 250 per month [1].","sources":[{"number":1,
+#   "filename":"expense-policy.pdf","page":2,"passage":"..."}],"provider":"openai",...}
+```
+
+- Retrieval is hybrid, in PostgreSQL: vector search (pgvector, cosine) and full-text search
+  (any of the question's terms) fused with Reciprocal Rank Fusion, limited to the owner's Ready
+  documents. A chunk counts as evidence only if it matched the full-text search or its cosine
+  similarity is at least `MIN_RELEVANCE`; with no evidence the chat model is not called.
+- With `RERANK_ENABLED=true` one extra chat call keeps the `RERANK_TOP_N` most relevant chunks;
+  if it fails, the fused order is used and the response says `"reranked": false`.
+- Sources reach the prompt labelled `S1..Sn`, delimited and escaped, within
+  `CONTEXT_TOKEN_BUDGET`. The model cites labels; the backend drops labels that were not in the
+  prompt, renumbers the rest `1..n` and builds each source (file, page or heading, passage) from
+  the stored chunk. An answer with no valid citation becomes `insufficient_evidence`.
+- `outcome: "insufficient_evidence"` is a normal `200`: the answer is a fixed message, `sources`
+  is empty and `related_passage` may show the closest passage, without a citation number.
+- Errors: `400 empty_question`, `400 question_too_long`, `409 no_ready_documents`,
+  `502 chat_unavailable` (provider error or invalid structured output), `502
+  retrieval_unavailable` (the question could not be embedded), `504 chat_timeout`,
+  `503 database_unavailable`. Provider failures are never reported as insufficient evidence.
+- `CHAT_PROVIDER` (`openai` or `anthropic`) and `CHAT_MODEL` select the chat model; every
+  response carries `provider` and `model`. Logs record outcome, counts, timings, provider and
+  model, never the question, prompt, sources or answer.
+- Every request in [`docs/http/chat.http`](docs/http/chat.http) can be run against the Compose
+  stack; the expected evidence per case is in
+  [`backend/tests/fixtures/rag_cases.json`](backend/tests/fixtures/rag_cases.json). Business
+  rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-07..13).
 
 ### Database schema
 
@@ -151,12 +197,18 @@ uv run ruff check . && uv run ruff format --check .   # lint
 uv run mypy .                                          # typecheck (strict)
 uv run pytest                                          # unit + integration (testcontainers)
 uv run pytest -m "not integration"                     # fast loop without Docker
+RUN_LIVE_TESTS=1 uv run --env-file ../.env pytest -m live  # opt-in: real OpenAI/Anthropic calls
 uv run --env-file ../.env uvicorn app.main:app --reload  # API on :8000; uv loads ../.env, the app does not
 
 # frontend/
 npm run lint && npm run typecheck && npm test
 npm run dev                                            # Vite on :5173, /api → BACKEND_URL (default :8000)
 ```
+
+The chat adapter contract tests (`tests/contract/`) run both the OpenAI and the Anthropic
+adapters offline against a local HTTP stub of the providers' APIs. The `live` tests call the
+real APIs and are skipped unless `RUN_LIVE_TESTS=1`; they also need the provider keys and
+`LIVE_OPENAI_CHAT_MODEL` / `LIVE_ANTHROPIC_CHAT_MODEL` (each provider is skipped without them).
 
 Integration tests build `db/Dockerfile` and start it with testcontainers, so they need a Docker
 daemon but not the Compose stack. To run the API outside Compose, set `DATABASE_URL` (see

@@ -16,6 +16,12 @@ All notable changes to this project are documented here. The format follows
   `POST /documents` accepts `.pdf`, `.md` and `.txt` up to `MAX_UPLOAD_MB`, re-uploading the same
   file returns the existing document, and failures say whether to upload another version or retry
   ([CWYD-3](https://goncalvesmarques.atlassian.net/browse/CWYD-3)).
+- Questions answered from the owner's Ready documents with verifiable citations, or an explicit
+  "Not enough evidence": `POST /chat` returns numbered sources (file, page or heading, passage)
+  built from the stored chunks, never confuses a provider timeout or error with missing evidence
+  (`504 chat_timeout`, `502 chat_unavailable`), and runs on OpenAI or Anthropic by configuration
+  (`CHAT_PROVIDER`), with an optional reranker (`RERANK_ENABLED`)
+  ([CWYD-4](https://goncalvesmarques.atlassian.net/browse/CWYD-4)).
 
 ### Maintenance
 
