@@ -9,7 +9,14 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --locked --no-dev --no-install-project
 
 FROM python:3.14-slim-trixie
-RUN useradd --system --uid 10001 --no-create-home app
+# Security fixes not yet in the base image, and no system pip: the app runs from the uv venv, and
+# pip's vendored libraries (msgpack, setuptools, urllib3) were the image's open CVEs (CWYD-6).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* \
+    && rm -rf /usr/local/lib/python3.14/site-packages/pip /usr/local/lib/python3.14/site-packages/pip-* \
+              /usr/local/lib/python3.14/ensurepip /usr/local/bin/pip /usr/local/bin/pip3* \
+    && useradd --system --uid 10001 --no-create-home app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
 COPY app ./app

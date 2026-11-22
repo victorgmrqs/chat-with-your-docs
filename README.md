@@ -241,6 +241,36 @@ loopback. On native Linux Docker Engine it resolves to the bridge gateway, which
 ports bound to `127.0.0.1`: run the Vite dev server on the host, or bind the ports you need to
 the gateway address in a local `compose.override.yaml` (never commit it).
 
+## CI and images
+
+`.github/workflows/ci.yml` runs on every pull request to `development` or `main`:
+
+| Job | What it does |
+| --- | --- |
+| `changes` | Path filter: `backend/**` and `db/**` select the backend, `frontend/**` the frontend (a change to the workflow selects both) |
+| `backend checks` | `uv sync --locked`, ruff (lint + format), mypy, pytest with integration tests on testcontainers, and a check that `frontend/openapi.json` matches the API |
+| `frontend checks` | `npm ci`, ESLint, `tsc -b`, Vitest, and a check that `src/api/schema.d.ts` matches `openapi.json` |
+| `image <component>` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
+| `publish <component>` | Pushes the scanned image to GHCR (never on pull requests) |
+| `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
+
+`ci-gate` is the only required status check on `development` and `main`, so a PR that touches
+only the frontend is not left waiting for backend checks that never run.
+
+**Publishing.** Pushes to `development` and `main`, `v*.*.*` tags and manual runs (*Actions →
+CI → Run workflow* on `development` or `main`) build both images and publish them only when
+every check and both scans passed: one failure publishes nothing. The image that is pushed is
+the one that was scanned. Images:
+
+```
+ghcr.io/victorgmrqs/chat-with-your-docs/backend:sha-<short commit>
+ghcr.io/victorgmrqs/chat-with-your-docs/frontend:sha-<short commit>
+```
+
+Each image also gets the branch name as a moving tag (`development`, `main`) and the version on
+a release tag (`1.2.0`). Deploy by `sha-` tag or by digest; each publish job writes the digest
+in the run summary. Third-party actions are pinned by commit SHA.
+
 ## Repository layout
 
 ```
@@ -253,5 +283,6 @@ frontend/   React + Vite SPA (src/components, src/hooks, src/api with the genera
 db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
             by Compose also creates the read-only role for the Postgres MCP server
 docs/       design tokens, domain rules, HTTP evidence, evaluation reports, curation notes
+.github/    CI workflow (checks, image scan, GHCR publishing) and the PR template
 compose.yaml, .env.example
 ```
