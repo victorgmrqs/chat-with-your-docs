@@ -41,7 +41,9 @@
 - Errors: domain errors subclass `DomainError` (`code` + message); `app/api/errors.py` maps each
   to its status and the `{code, detail, request_id}` body, plus a generic `500 internal_error`
   for anything unhandled. `app/api/request_id.py`: middleware that sets `X-Request-ID` on every
-  response (`request_id_of(request)`, never client-supplied; DOM-23). Routes get the container
+  response (`request_id_of(request)`, never client-supplied; DOM-23). `app/api/forwarded_prefix.py`
+  (CWYD-20): sets `root_path` when `X-Forwarded-Prefix` equals `API_ROOT_PATH`, so the docs work
+  behind nginx's `/api` and directly. Routes get the container
   via `app/api/dependencies.py:get_container`.
 - Tracing (CWYD-12): span/attribute names and helpers (`step`, `record_usage`, `add_content`)
   in `app/application/telemetry.py`, over the OpenTelemetry API only; SDK, sampler and exporter

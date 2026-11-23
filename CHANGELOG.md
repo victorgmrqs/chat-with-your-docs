@@ -84,6 +84,11 @@ All notable changes to this project are documented here. The format follows
   `PDF_MAX_PAGES` (default 500) or `PDF_PARSE_TIMEOUT_SECONDS` (default 60) ends `failed` with the
   permanent reason `too_many_pages` or `parse_timeout`, each with a message saying what to upload
   instead ([CWYD-19](https://goncalvesmarques.atlassian.net/browse/CWYD-19)).
+- The web server no longer shows its version and sends a deny-all `Permissions-Policy` (camera,
+  microphone, geolocation, payment, usb) on every response, errors included; Swagger UI now works
+  through it at `/api/docs` (spec at `/api/openapi.json`, "Try it out" included) as well as directly
+  on the API at `/docs`, since the API honours `X-Forwarded-Prefix` only when it equals
+  `API_ROOT_PATH` (default `/api`) ([CWYD-20](https://goncalvesmarques.atlassian.net/browse/CWYD-20)).
 
 ### Maintenance
 

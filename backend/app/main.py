@@ -10,6 +10,7 @@ from app.adapters.telemetry import configure_tracing
 from app.api import chat, documents, health
 from app.api.body_limit import BodySizeLimit
 from app.api.errors import register_error_handlers
+from app.api.forwarded_prefix import ForwardedPrefix
 from app.api.request_id import add_request_id
 from app.application.ports import ChatModelPort, EmbeddingPort
 from app.composition import Container, build_container
@@ -23,7 +24,8 @@ RECOVERY_TIMEOUT_SECONDS = 10
 
 def _is_health_probe(scope: MutableMapping[str, Any]) -> bool:
     """Compose and k8s probe these every few seconds: a trace each would bury the real ones."""
-    return str(scope.get("path", "")).startswith("/health")
+    path, root = str(scope.get("path", "")), str(scope.get("root_path", ""))
+    return path.removeprefix(root).startswith("/health")  # behind the /api prefix too (CWYD-20)
 
 
 async def _best_effort[T](label: str, step: Awaitable[T]) -> T | None:
@@ -85,7 +87,8 @@ def create_app(
             # collector is gone), so off the event loop.
             await asyncio.to_thread(tracer_provider.shutdown)
 
-    docs = (settings or HttpSettings()).api_docs_enabled
+    http = settings or HttpSettings()
+    docs = http.api_docs_enabled
 
     # FastAPI's native telemetry adds the HTTP server span (the trace root, route and status)
     # and operation spans around our pipeline spans whenever a tracer provider is set. It
@@ -105,6 +108,8 @@ def create_app(
     # Added first, so it runs inside the request-id middleware and its 413 carries the id.
     app.add_middleware(BodySizeLimit, settings=loaded_settings)
     app.middleware("http")(add_request_id)
+    # Outermost: everything inside, the docs included, sees the root path set.
+    app.add_middleware(ForwardedPrefix, prefix=http.api_root_path)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(documents.router)

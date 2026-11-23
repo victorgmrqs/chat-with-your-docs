@@ -17,6 +17,16 @@ def test_http_tracing_skips_health_probes(
     assert spans.get_finished_spans() == ()
 
 
+def test_http_tracing_skips_health_probes_behind_the_api_prefix(
+    unreachable_settings: Settings, spans: InMemorySpanExporter
+) -> None:
+    """CWYD-20: through the web server the path carries the /api root path."""
+    with TestClient(create_app(settings=unreachable_settings)) as client:
+        client.get("/health", headers={"X-Forwarded-Prefix": "/api"})
+
+    assert spans.get_finished_spans() == ()
+
+
 def test_http_tracing_root_span_is_the_request(
     unreachable_settings: Settings, spans: InMemorySpanExporter
 ) -> None:
