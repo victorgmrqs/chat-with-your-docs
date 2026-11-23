@@ -16,15 +16,18 @@ from app.application.answering import AnswerQuestion
 from app.application.prompts import AnswerDraft, RerankDraft
 from app.domain.answers import ChatModelUnavailable, RetrievedChunk
 from app.domain.documents import DocumentStatus, FailureReason
-from app.domain.usage import ModelPrice, PriceTable
+from app.domain.usage import ModelPrice, PriceTable, TokenUsage
 from tests.factories import fixture_bytes, make_answering, make_ingestion, make_retrieved_chunk
 from tests.fakes import (
+    EMBEDDING_MODEL,
+    EMBEDDING_TOKENS_PER_TEXT,
     FailingEmbeddings,
     FakeChatModel,
     FakeEmbeddings,
     FakeRetriever,
     InMemoryDocumentRepository,
     Reply,
+    embedding_usage,
 )
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -34,8 +37,15 @@ CHUNK_TEXT = "Coworking reimbursement is limited to US$ 250 per month per employ
 ANSWER_TEXT = "The limit is US$ 250 per month [S1]."
 PROVIDER_ECHO = "provider echoed: What is the monthly coworking limit"
 LIMIT = make_retrieved_chunk(filename="expense-policy.pdf", page=2, text=CHUNK_TEXT)
-# $1 / $2 per million tokens: 100 input + 20 output tokens cost 0.00014.
-PRICES = PriceTable({"fake-chat-model": ModelPrice(input=1.0, output=2.0)})
+# Chat $1 / $2 per million tokens: 100 input + 20 output tokens cost 0.00014. Embeddings
+# $0.5 per million: the 5-token query embedding costs 0.0000025 (CWYD-28).
+PRICES = PriceTable(
+    {
+        "fake-chat-model": ModelPrice(input=1.0, output=2.0),
+        EMBEDDING_MODEL: ModelPrice(input=0.5, output=0.0),
+    }
+)
+QUERY_TOKENS = EMBEDDING_TOKENS_PER_TEXT  # one query, one text
 ANSWERED = AnswerDraft(outcome="answered", answer=ANSWER_TEXT, closest_source_id=None)
 
 
@@ -49,7 +59,7 @@ def _use_case(
 ) -> AnswerQuestion:
     return make_answering(
         FakeRetriever(chunks),
-        FakeEmbeddings(8),
+        FakeEmbeddings(8, reports_usage=reports_usage is not False),
         FakeChatModel(*replies, reports_usage=reports_usage),
         rerank=rerank,
         prices=prices,
@@ -106,9 +116,9 @@ async def test_otel_chat_trace_success(spans: InMemorySpanExporter) -> None:
     assert root.attributes[t.GEN_AI_PROVIDER] == "fake"
     assert root.attributes[t.GEN_AI_REQUEST_MODEL] == "fake-chat-model"
     assert root.attributes[t.SOURCES] == 1
-    assert root.attributes[t.GEN_AI_INPUT_TOKENS] == 100
+    assert root.attributes[t.GEN_AI_INPUT_TOKENS] == 100 + QUERY_TOKENS
     assert root.attributes[t.GEN_AI_OUTPUT_TOKENS] == 20
-    assert root.attributes[t.COST_USD] == 0.00014
+    assert root.attributes[t.COST_USD] == 0.0001425
     # Per-step counts live on their own spans (retrieved vs used chunks).
     assert _attrs(named[t.RETRIEVAL_HYBRID])[t.RETRIEVAL_EVIDENCE] == 1
     assert _attrs(named[t.ANSWER_GENERATION])[t.CONTEXT_CHUNKS] == 1
@@ -129,8 +139,10 @@ async def test_otel_chat_trace_refusal_without_evidence(spans: InMemorySpanExpor
     root = named[t.CHAT].attributes
     assert root is not None
     assert root[t.OUTCOME] == "refused"
-    # No call reported usage: no totals and no cost, never a recorded 0 (DOM-24).
-    assert not {t.GEN_AI_INPUT_TOKENS, t.GEN_AI_OUTPUT_TOKENS, t.COST_USD} & set(root)
+    # Only the query embedding ran: its tokens and cost are the question's (DOM-24).
+    assert root[t.GEN_AI_INPUT_TOKENS] == QUERY_TOKENS
+    assert root[t.GEN_AI_OUTPUT_TOKENS] == 0
+    assert root[t.COST_USD] == 0.0000025
 
 
 async def test_otel_no_content_by_default(spans: InMemorySpanExporter) -> None:
@@ -208,8 +220,8 @@ async def test_otel_rerank_tokens_count_in_the_request_total(
     assert _attrs(named[t.RERANK])[t.RERANK_KEPT] == 1
     root = named[t.CHAT].attributes
     assert root is not None
-    assert root[t.GEN_AI_INPUT_TOKENS] == 200  # rerank + answer_generation
-    assert root[t.COST_USD] == 0.00028
+    assert root[t.GEN_AI_INPUT_TOKENS] == 200 + QUERY_TOKENS  # rerank + answer + query embedding
+    assert root[t.COST_USD] == 0.0002825
 
 
 async def test_otel_unpriced_model_records_no_cost(spans: InMemorySpanExporter) -> None:
@@ -220,13 +232,13 @@ async def test_otel_unpriced_model_records_no_cost(spans: InMemorySpanExporter) 
     root = _by_name(spans)[t.CHAT].attributes
     assert root is not None
     assert t.COST_USD not in root  # DOM-24: unknown, never a wrong number
-    assert root[t.GEN_AI_INPUT_TOKENS] == 100
-    assert answer.usage == (FakeChatModel.USAGE_PER_CALL,)
+    assert root[t.GEN_AI_INPUT_TOKENS] == 100 + QUERY_TOKENS
+    assert answer.usage == (*embedding_usage([QUESTION]), FakeChatModel.USAGE_PER_CALL)
 
 
 async def test_otel_no_usage_no_cost(spans: InMemorySpanExporter) -> None:
-    """CWYD-27 (DOM-24): a provider that returns no usage metadata records no tokens and no
-    cost on the step or the question, never 0."""
+    """CWYD-27 (DOM-24): providers that return no usage metadata (chat and embeddings) record no
+    tokens and no cost on the steps or the question, never 0."""
     use_case = _use_case([LIMIT], ANSWERED, reports_usage=False)
 
     answer = await use_case.answer(OWNER, QUESTION)
@@ -244,7 +256,7 @@ async def test_otel_call_without_usage_is_left_out_of_the_totals(
     """CWYD-27 (DOM-24): only calls that reported usage count toward the question's totals."""
     use_case = make_answering(
         FakeRetriever([LIMIT]),
-        FakeEmbeddings(8),
+        FakeEmbeddings(8, reports_usage=False),
         # The rerank call reports no usage; the answer call does.
         FakeChatModel(RerankDraft(source_ids=["S1"]), ANSWERED, reports_usage=[False, True]),
         rerank=True,
@@ -258,6 +270,24 @@ async def test_otel_call_without_usage_is_left_out_of_the_totals(
     root = _attrs(named[t.CHAT])
     assert root[t.GEN_AI_INPUT_TOKENS] == 100  # the answer call only
     assert root[t.COST_USD] == 0.00014
+
+
+async def test_answering_counts_query_embedding_usage(spans: InMemorySpanExporter) -> None:
+    """CWYD-28 (DOM-24): the query embedding's span records its model and tokens, and they count
+    toward the question's totals and cost."""
+    use_case = _use_case([LIMIT], ANSWERED)
+
+    answer = await use_case.answer(OWNER, QUESTION)
+
+    named = _by_name(spans)
+    embed = _attrs(named[t.RETRIEVAL_EMBED_QUERY])
+    assert embed[t.GEN_AI_RESPONSE_MODEL] == EMBEDDING_MODEL
+    assert embed[t.GEN_AI_INPUT_TOKENS] == QUERY_TOKENS
+    assert embed[t.GEN_AI_OUTPUT_TOKENS] == 0
+    root = _attrs(named[t.CHAT])
+    assert root[t.GEN_AI_INPUT_TOKENS] == 100 + QUERY_TOKENS
+    assert root[t.COST_USD] == 0.0001425  # chat 0.00014 + query embedding 0.0000025
+    assert answer.usage[0] == TokenUsage(EMBEDDING_MODEL, QUERY_TOKENS, 0)
 
 
 async def test_otel_ingest_trace_success(spans: InMemorySpanExporter) -> None:
@@ -280,6 +310,24 @@ async def test_otel_ingest_trace_success(spans: InMemorySpanExporter) -> None:
     chunk_count = chunks[t.DOCUMENT_CHUNKS]
     assert isinstance(chunk_count, int)
     assert chunk_count > 0
+    # CWYD-28 (DOM-24): the embedding call's model and tokens; no price table, no cost.
+    embed = _attrs(named[t.INGEST_EMBED])
+    assert embed[t.GEN_AI_RESPONSE_MODEL] == EMBEDDING_MODEL
+    assert embed[t.GEN_AI_INPUT_TOKENS] == EMBEDDING_TOKENS_PER_TEXT * chunk_count
+    assert t.COST_USD not in embed
+
+
+async def test_otel_ingest_embedding_cost_on_the_embed_span(spans: InMemorySpanExporter) -> None:
+    service = make_ingestion(InMemoryDocumentRepository(), FakeEmbeddings(8), prices=PRICES)
+    content = fixture_bytes("office-handbook.txt")
+    uploaded = await service.upload(OWNER, "office-handbook.txt", content)
+
+    await service.index(uploaded.document, content)
+
+    embed = _attrs(_by_name(spans)[t.INGEST_EMBED])
+    tokens = embed[t.GEN_AI_INPUT_TOKENS]
+    assert isinstance(tokens, int)
+    assert embed[t.COST_USD] == round(tokens * 0.5 / 1e6, 8)
 
 
 async def test_otel_ingest_provider_failure_recorded(spans: InMemorySpanExporter) -> None:

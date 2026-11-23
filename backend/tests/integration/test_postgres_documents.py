@@ -107,10 +107,10 @@ async def _indexed_input(
         Section(text="Coworking reimbursement is limited to US$ 250.", page=2),
     ]
     chunks = build_chunks(document, sections)
-    embeddings = await FakeEmbeddings(EMBEDDING_DIMENSIONS).embed_documents(
+    embedding = await FakeEmbeddings(EMBEDDING_DIMENSIONS).embed_documents(
         [c.embedding_text for c in chunks]
     )
-    return document, chunks, embeddings
+    return document, chunks, embedding.value
 
 
 async def _locations(

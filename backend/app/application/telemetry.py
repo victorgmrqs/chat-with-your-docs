@@ -14,7 +14,7 @@ from opentelemetry import trace
 from opentelemetry.trace import Span, Status, StatusCode
 from opentelemetry.util.types import AttributeValue
 
-from app.domain.usage import TokenUsage
+from app.domain.usage import PriceTable, TokenUsage
 
 tracer = trace.get_tracer("cwyd")
 
@@ -115,6 +115,19 @@ def record_usage(span: Span, usage: Sequence[TokenUsage]) -> None:
             GEN_AI_OUTPUT_TOKENS: sum(u.output_tokens for u in usage),
         }
     )
+
+
+def record_cost(span: Span, prices: PriceTable, usage: Sequence[TokenUsage]) -> float | None:
+    """Estimated USD cost of `usage` (DOM-24), also returned; nothing when no usage was
+    reported or a model has no price: unknown, never 0 or a wrong number."""
+    if not usage:
+        return None
+    cost = prices.cost(usage)
+    if cost is None:
+        return None
+    cost = round(cost, 8)
+    span.set_attribute(COST_USD, cost)
+    return cost
 
 
 def add_content(span: Span, event: str, text: str, *, enabled: bool) -> None:

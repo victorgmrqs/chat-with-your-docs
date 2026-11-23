@@ -54,11 +54,12 @@ def build_container(
     embeddings: EmbeddingPort | None = None,
     chat: ChatModelPort | None = None,
     wrap_retriever: Callable[[RetrieverPort], RetrieverPort] | None = None,
+    wrap_embeddings: Callable[[EmbeddingPort], EmbeddingPort] | None = None,
 ) -> Container:
     """`embeddings` and `chat` replace the provider adapters in tests (declared fakes).
 
-    `wrap_retriever` decorates the retriever, e.g. so the RAG evaluation can record what
-    retrieval returned for each question (CWYD-11).
+    `wrap_retriever` and `wrap_embeddings` decorate those ports, e.g. so the RAG evaluation can
+    record what retrieval returned (CWYD-11) and the embedding tokens (CWYD-28) per question.
     """
     # hide_parameters: driver errors must not echo bound values (chunk text) into logs.
     engine = create_async_engine(
@@ -67,7 +68,10 @@ def build_container(
     embeddings = embeddings or OpenAIEmbeddingAdapter(
         settings.embedding_model, settings.openai_api_key, settings.embedding_dimensions
     )
+    if wrap_embeddings is not None:
+        embeddings = wrap_embeddings(embeddings)
     chat = chat or build_chat_model(settings)
+    prices = load_price_table(settings.price_table_path)
     readiness = PostgresReadiness(engine)
     ingestion = IngestionService(
         PostgresDocumentRepository(engine),
@@ -78,8 +82,8 @@ def build_container(
         max_upload_bytes=settings.max_upload_bytes,
         embedding_dimensions=settings.embedding_dimensions,
         pdf_parse_timeout_seconds=settings.pdf_parse_timeout_seconds,
+        prices=prices,  # DOM-24
     )
-    prices = load_price_table(settings.price_table_path)
     retriever: RetrieverPort = PostgresRetriever(engine)
     if wrap_retriever is not None:
         retriever = wrap_retriever(retriever)

@@ -1,6 +1,7 @@
 # Configurations compared by `python -m eval.run` (CWYD-11). `settings` overrides the
 # environment's Settings (app/config.py field names); everything else comes from .env.
-# Chat model prices (cost columns of the reports) come from app/prices.yaml, shared with the API.
+# Model prices (chat and embedding; cost columns of the reports) come from app/prices.yaml,
+# shared with the API.
 
 configurations:
   - name: baseline

@@ -59,6 +59,11 @@
   `app/adapters/price_table.py`. Rules DOM-22..24. Hardening (CWYD-27): FastAPI telemetry logs
   off; `configure_tracing` installs a no-op propagator (client `traceparent`/`baggage` ignored);
   the root span records token totals and cost only when some call reported usage.
+  Embeddings (CWYD-28): `EmbeddingPort.embed_documents` returns `Generation` too; the OpenAI
+  adapter calls the SDK's `embeddings.create` directly (batched by count and characters) so it
+  can read usage. `ingest.embed` and `retrieval.embed_query` record model/tokens; the question's
+  totals include the query embedding; a successful indexing job logs tokens and cost
+  (`t.record_cost`). The eval records embedding usage via `build_container(wrap_embeddings=...)`.
   Tests read spans from an in-memory exporter.
 - Schema: Alembic, hand-written revisions in `migrations/versions/` (`target_metadata = None`;
   never edit an applied revision, add a new one). The image runs `alembic upgrade head` before

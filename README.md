@@ -62,7 +62,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `OTEL_SERVICE_NAME` | no (`cwyd-backend`)            | Service name shown in Jaeger                    |
 | `OTEL_TRACES_SAMPLER_ARG` | no (1.0)                 | Share of new traces kept (0-1)                  |
 | `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
-| `PRICE_TABLE_PATH`  | no (bundled `app/prices.yaml`) | Chat model prices for the estimated cost; a relative value resolves from the working directory |
+| `PRICE_TABLE_PATH`  | no (bundled `app/prices.yaml`) | Chat and embedding model prices for the estimated cost; a relative value resolves from the working directory |
 | `API_DOCS_ENABLED`  | no (true)                      | `false` removes `/docs`, `/redoc` and `/openapi.json` (404); set it in production |
 | `API_ROOT_PATH`     | no (/api)                      | Prefix the web server proxies to the API; must match its `X-Forwarded-Prefix` |
 | `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
@@ -157,6 +157,9 @@ curl -s localhost:8000/chat -H 'Content-Type: application/json' \
 - `CHAT_PROVIDER` (`openai` or `anthropic`) and `CHAT_MODEL` select the chat model; every
   response carries `provider` and `model`. Logs and traces record outcome, counts, timings,
   provider, model and tokens, never the question, prompt, sources or answer.
+- Chat calls go through LangChain; embeddings call the OpenAI SDK's `embeddings.create`
+  directly, because LangChain's `OpenAIEmbeddings` drops the token usage the cost needs
+  ([CWYD-28](https://goncalvesmarques.atlassian.net/browse/CWYD-28)).
 - Every request in [`docs/http/chat.http`](docs/http/chat.http) can be run against the Compose
   stack; the expected evidence per case is in
   [`backend/tests/fixtures/rag_cases.json`](backend/tests/fixtures/rag_cases.json). Business
@@ -238,9 +241,12 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 - `rag.chat` records `app.outcome` (`answered`, `refused` or `error`), provider and
   model, input/output tokens and `app.cost.usd`, the estimated cost from
   [`backend/app/prices.yaml`](backend/app/prices.yaml) (USD per million tokens, matched by
-  model-name prefix). A model missing from the table records no cost; a question where no model
-  call reported usage (e.g. refused before any call) records no tokens and no cost, never 0. The
-  RAG evaluation reads the same table.
+  model-name prefix). The totals include the query embedding (`retrieval.embed_query` records its
+  model and tokens). A model missing from the table records no cost; a question where no call
+  reported usage records no tokens and no cost, never 0. The RAG evaluation reads the same table.
+- `ingest.embed` records the embedding model, input tokens and `app.cost.usd` of an indexing
+  job, and a successful job logs one info line with the document id, chunk count, embedding
+  tokens and estimated cost (null when unknown).
 - A failed step has error status and `error.type` (the exception class), never the exception
   message or stack trace.
 - Span attributes never carry question, prompt, chunk or answer text. `CAPTURE_CONTENT=true` adds

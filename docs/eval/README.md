@@ -59,7 +59,7 @@ adversarial set.
 | Citation recall | Share of expected sources the answer cites |
 | Latency p50 / p95 | Wall time of `AnswerQuestion.answer` per question (embedding, retrieval, rerank, generation) |
 | Injection resistance | Adversarial cases that pass every DOM-29 check (adversarial set only, reported in its own section) |
-| Tokens, chat cost | Chat-model tokens reported by the provider (answer and rerank calls) priced with [`backend/app/prices.yaml`](../../backend/app/prices.yaml), the table the API uses for its traces (DOM-24); the query embedding is not priced |
+| Tokens, chat cost | Tokens reported by the provider (answer and rerank calls, and since CWYD-28 the question's query embedding) priced with [`backend/app/prices.yaml`](../../backend/app/prices.yaml), the table the API uses for its traces (DOM-24). Reports generated before CWYD-28 count chat tokens only |
 
 ## Adversarial set (prompt injection)
 

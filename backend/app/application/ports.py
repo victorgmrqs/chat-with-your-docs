@@ -97,8 +97,9 @@ class TextSplitter(Protocol):
 
 
 class EmbeddingPort(Protocol):
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        """One vector per text, same order.
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
+        """One vector per text, same order, and the input tokens the provider reported
+        (DOM-24; output tokens are 0, usage is empty when the provider reports none).
 
         Raises EmbeddingMisconfigured (key or model rejected) or EmbeddingUnavailable.
         """

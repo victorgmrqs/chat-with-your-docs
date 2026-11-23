@@ -65,7 +65,7 @@ class _Run:
     context_chunks: int = 0
     invalid_citations: int = 0
     reranked: bool = False
-    usage: list[TokenUsage] = field(default_factory=list)  # DOM-24: every chat model call
+    usage: list[TokenUsage] = field(default_factory=list)  # DOM-24: every model call
 
 
 class AnswerQuestion:
@@ -124,11 +124,13 @@ class AnswerQuestion:
         return answer
 
     async def _answer(self, owner_id: uuid.UUID, question: str, run: _Run) -> Answer:
-        with t.step(t.RETRIEVAL_EMBED_QUERY, {t.EMBEDDED_TEXTS: 1}):
+        with t.step(t.RETRIEVAL_EMBED_QUERY, {t.EMBEDDED_TEXTS: 1}) as span:
             try:
-                [query_embedding] = await self._embeddings.embed_documents([question])
+                embedding = await self._embeddings.embed_documents([question])
             except EmbeddingUnavailable:
                 raise RetrievalUnavailable from None
+            _record_usage(span, run, embedding.usage)  # DOM-24: counts toward the question
+            [query_embedding] = embedding.value
         with t.step(
             t.RETRIEVAL_HYBRID,
             {
@@ -255,9 +257,7 @@ class AnswerQuestion:
                 t.GEN_AI_OUTPUT_TOKENS: sum(u.output_tokens for u in run.usage),
             }
         )
-        cost = self._prices.cost(run.usage)
-        if cost is not None:  # DOM-24: a model without a price records no cost
-            span.set_attribute(t.COST_USD, round(cost, 8))
+        t.record_cost(span, self._prices, run.usage)
 
     def _insufficient(self, run: _Run, related: RetrievedChunk | None) -> Answer:
         # DOM-10: fixed message; the related passage carries no citation number.
@@ -309,6 +309,6 @@ class AnswerQuestion:
 
 
 def _record_usage(span: Span, run: _Run, usage: Sequence[TokenUsage]) -> None:
-    """DOM-24: on the model call's span and in the question's total."""
+    """DOM-24: on the model or embedding call's span and in the question's total."""
     run.usage.extend(usage)
     t.record_usage(span, usage)

@@ -189,6 +189,7 @@ def make_ingestion(
     parser: DocumentParser | None = None,
     pdf_max_pages: int = 500,
     pdf_parse_timeout_seconds: float = 60,
+    prices: PriceTable | None = None,
 ) -> IngestionService:
     """Parser and splitter are the real, in-process adapters: deterministic, no I/O.
 
@@ -203,4 +204,5 @@ def make_ingestion(
         max_upload_bytes=max_upload_bytes,
         embedding_dimensions=EMBEDDING_DIMENSIONS,
         pdf_parse_timeout_seconds=pdf_parse_timeout_seconds,
+        prices=prices,
     )
