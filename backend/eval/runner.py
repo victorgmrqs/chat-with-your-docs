@@ -1,9 +1,11 @@
-"""Runs the golden dataset through the real pipeline for one configuration (DOM-20, DOM-21).
+"""Runs the golden dataset through the real pipeline for one configuration (DOM-20, DOM-21),
+and the adversarial set, when given, as a separate collection (DOM-29).
 
 Documents are indexed by the real IngestionService under an evaluation owner derived from the
-settings that shape the stored chunks, so evaluation data never mixes with the UI owner's and a
-re-run reuses what is already indexed (DOM-04). Questions run one at a time: latency is per
-question and the retriever recording belongs to the question being asked.
+settings that shape the stored chunks (and the collection), so evaluation data never mixes with
+the UI owner's or the other collection's, and a re-run reuses what is already indexed
+(DOM-04). Questions run one at a time: latency is per question and the retriever recording
+belongs to the question being asked.
 """
 
 import time
@@ -59,6 +61,16 @@ class DocumentRow:
 
 
 @dataclass(frozen=True, slots=True)
+class AdversarialRun:
+    """DOM-29: the prompt-injection cases, scored and summarized apart from the golden set."""
+
+    dataset_sha256: str
+    documents: list[DocumentRow]
+    scores: list[QuestionScore]
+    summary: Summary
+
+
+@dataclass(frozen=True, slots=True)
 class RunResult:
     config: EvalConfig
     settings: dict[str, Any]
@@ -67,11 +79,13 @@ class RunResult:
     documents: list[DocumentRow]
     scores: list[QuestionScore]
     summary: Summary
+    adversarial: AdversarialRun | None = None
 
     @property
     def partial_collection(self) -> bool:
-        """Some document is not Ready: the questions ran on part of the collection."""
-        return any(document.status != "ready" for document in self.documents)
+        """Some document is not Ready: the questions ran on part of a collection."""
+        documents = [*self.documents, *(self.adversarial.documents if self.adversarial else [])]
+        return any(document.status != "ready" for document in documents)
 
 
 def configured_settings(base: Settings, config: EvalConfig) -> Settings:
@@ -83,10 +97,13 @@ def configured_settings(base: Settings, config: EvalConfig) -> Settings:
     return Settings.model_validate({**base.model_dump(), **defaults, **config.settings})
 
 
-def eval_owner(settings: Settings) -> uuid.UUID:
-    """Same chunking and embedding model, same owner: the indexed collection is reused."""
+def eval_owner(settings: Settings, collection: str = "") -> uuid.UUID:
+    """Same chunking, embedding model and collection, same owner: the indexed one is reused.
+
+    The golden collection has no suffix, so its owner (and indexed data) predates CWYD-21.
+    """
     key = f"{settings.embedding_model}:{settings.chunk_size}:{settings.chunk_overlap}"
-    return uuid.uuid5(_OWNER_NAMESPACE, key)
+    return uuid.uuid5(_OWNER_NAMESPACE, f"{key}:{collection}" if collection else key)
 
 
 def build_eval_container(
@@ -158,7 +175,25 @@ async def ask(
         cost_usd=prices.cost(usage),  # DOM-24: None when a model has no price
         error=error,
         reranked=answer.reranked if answer else False,
+        answer=answer.text if answer else "",
     )
+
+
+async def _run_collection(
+    container: Container,
+    recorder: RecordingRetriever,
+    dataset: Dataset,
+    owner_id: uuid.UUID,
+    documents_dir: Path,
+) -> tuple[list[DocumentRow], list[QuestionScore]]:
+    documents = await index_documents(
+        container.ingestion, owner_id, documents_dir, dataset.documents
+    )
+    scores = []
+    for question in dataset.questions:
+        observation = await ask(container.answering, recorder, owner_id, question, container.prices)
+        scores.append(score_question(question, observation))
+    return documents, scores
 
 
 async def evaluate(
@@ -167,17 +202,22 @@ async def evaluate(
     dataset: Dataset,
     config: EvalConfig,
     documents_dir: Path,
+    adversarial: Dataset | None = None,
 ) -> RunResult:
     settings = container.settings
     started_at = datetime.now(UTC)
-    owner_id = eval_owner(settings)
-    documents = await index_documents(
-        container.ingestion, owner_id, documents_dir, dataset.documents
+    documents, scores = await _run_collection(
+        container, recorder, dataset, eval_owner(settings), documents_dir
     )
-    scores = []
-    for question in dataset.questions:
-        observation = await ask(container.answering, recorder, owner_id, question, container.prices)
-        scores.append(score_question(question, observation))
+    adversarial_run = None
+    if adversarial is not None:
+        owner_id = eval_owner(settings, "adversarial")
+        adv_documents, adv_scores = await _run_collection(
+            container, recorder, adversarial, owner_id, documents_dir
+        )
+        adversarial_run = AdversarialRun(
+            adversarial.sha256, adv_documents, adv_scores, summarize(adv_scores)
+        )
     return RunResult(
         config=config,
         settings={name: getattr(settings, name) for name in REPORTED_SETTINGS},
@@ -186,4 +226,5 @@ async def evaluate(
         documents=documents,
         scores=scores,
         summary=summarize(scores),
+        adversarial=adversarial_run,
     )

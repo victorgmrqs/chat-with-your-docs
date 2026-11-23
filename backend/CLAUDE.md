@@ -38,6 +38,9 @@
   shared with the API), `runner.py`
   drives the real container (`build_container(wrap_retriever=...)` records retrieval), pure
   scoring in `scoring.py` (DOM-20/21), reports to `docs/eval/`. `python -m eval.run [--config N]`.
+  Adversarial prompt-injection set (CWYD-21, DOM-29): `adversarial.yaml` over its own fixtures
+  (`scripts/generate_fixtures.py`) and eval owner, scored in memory (answer text never written)
+  and reported in a separate section; `--no-adversarial` skips it.
 - Errors: domain errors subclass `DomainError` (`code` + message); `app/api/errors.py` maps each
   to its status and the `{code, detail, request_id}` body, plus a generic `500 internal_error`
   for anything unhandled. `app/api/request_id.py`: middleware that sets `X-Request-ID` on every

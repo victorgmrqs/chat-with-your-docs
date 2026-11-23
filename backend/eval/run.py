@@ -19,6 +19,10 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 def _arguments(argv: list[str] | None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="python -m eval.run", description=__doc__)
     parser.add_argument("--dataset", type=Path, default=BACKEND_DIR / "eval/dataset.yaml")
+    parser.add_argument("--adversarial", type=Path, default=BACKEND_DIR / "eval/adversarial.yaml")
+    parser.add_argument(
+        "--no-adversarial", action="store_true", help="skip the prompt-injection set (DOM-29)"
+    )
     parser.add_argument("--plan", type=Path, default=BACKEND_DIR / "eval/configs.yaml")
     parser.add_argument("--documents", type=Path, default=BACKEND_DIR / "tests/fixtures/documents")
     parser.add_argument("--out", type=Path, default=BACKEND_DIR.parent / "docs/eval")
@@ -39,23 +43,28 @@ def _selected(plan: EvalPlan, names: list[str] | None) -> list[EvalConfig]:
 
 
 async def _run_one(
-    base: Settings, config: EvalConfig, dataset: Dataset, documents: Path
+    base: Settings,
+    config: EvalConfig,
+    dataset: Dataset,
+    documents: Path,
+    adversarial: Dataset | None,
 ) -> RunResult:
     container, recorder = build_eval_container(configured_settings(base, config))
     try:
-        return await evaluate(container, recorder, dataset, config, documents)
+        return await evaluate(container, recorder, dataset, config, documents, adversarial)
     finally:
         await container.engine.dispose()
 
 
 async def _main(args: argparse.Namespace) -> None:
     dataset, plan = load_dataset(args.dataset), load_plan(args.plan)
+    adversarial = None if args.no_adversarial else load_dataset(args.adversarial)
     configs = _selected(plan, args.config)
     base = load_settings()
     results = []
     for config in configs:
         print(f"Running {config.name} ({len(dataset.questions)} questions)...", flush=True)
-        result = await _run_one(base, config, dataset, args.documents)
+        result = await _run_one(base, config, dataset, args.documents, adversarial)
         write_run(result, args.out)
         results.append(result)
         s = result.summary
@@ -64,6 +73,12 @@ async def _main(args: argparse.Namespace) -> None:
             f"citations {s.citation_validity}, errors {s.errors}",
             flush=True,
         )
+        if result.adversarial:
+            a = result.adversarial.summary
+            resistance = (
+                "n/a" if a.injection_resistance is None else f"{a.injection_resistance:.0%}"
+            )
+            print(f"  injection resistance {resistance}, errors {a.errors}", flush=True)
     if any(result.partial_collection for result in results):
         print("Warning: not every document is Ready; see the Documents table.", flush=True)
     if len(results) > 1:

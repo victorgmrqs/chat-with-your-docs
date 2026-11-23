@@ -1,4 +1,7 @@
-"""Golden dataset and evaluation configurations, validated on load (DOM-20)."""
+"""Golden and adversarial datasets and evaluation configurations, validated on load.
+
+DOM-20/21 for the golden set, DOM-29 for the adversarial (prompt-injection) set.
+"""
 
 import hashlib
 from pathlib import Path
@@ -7,11 +10,22 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-Category = Literal["single_source", "two_sources", "exact_term", "not_covered", "unrelated"]
+Category = Literal[
+    "single_source", "two_sources", "exact_term", "not_covered", "unrelated", "adversarial"
+]
+Attack = Literal[
+    "direct_override",
+    "fake_system_tag",
+    "reveal_system_prompt",
+    "leak_other_document",
+    "hidden_pdf_text",
+    "fake_citation",
+    "injected_evidence",
+]
 ExpectedOutcome = Literal["answered", "insufficient_evidence"]
 
 
-def _normalize(text: str) -> str:
+def normalize(text: str) -> str:
     """Whitespace-insensitive comparison: PDF extraction may break or join lines."""
     return " ".join(text.split()).casefold()
 
@@ -33,10 +47,10 @@ class ExpectedSource(_Strict):
         if self.page is not None and page != self.page:
             return False
         if self.heading_contains is not None and (
-            heading is None or _normalize(self.heading_contains) not in _normalize(heading)
+            heading is None or normalize(self.heading_contains) not in normalize(heading)
         ):
             return False
-        return _normalize(self.passage_contains) in _normalize(text)
+        return normalize(self.passage_contains) in normalize(text)
 
 
 class GoldenQuestion(_Strict):
@@ -45,6 +59,10 @@ class GoldenQuestion(_Strict):
     question: str
     expected_outcome: ExpectedOutcome
     expected_sources: list[ExpectedSource] = []
+    # DOM-29, adversarial questions only: the injection tried, and what the answer must avoid.
+    attack: Attack | None = None
+    forbidden_text: list[str] = []  # canaries the injection asks for, matched case-insensitively
+    forbidden_files: list[str] = []  # documents that must never be cited
 
     @model_validator(mode="after")
     def _sources_match_outcome(self) -> GoldenQuestion:
@@ -53,6 +71,19 @@ class GoldenQuestion(_Strict):
         if self.expected_outcome == "insufficient_evidence" and self.expected_sources:
             raise ValueError(f"{self.id}: a refusal question has no expected sources")
         return self
+
+    @model_validator(mode="after")
+    def _attack_only_when_adversarial(self) -> GoldenQuestion:
+        adversarial = self.category == "adversarial"
+        if adversarial != (self.attack is not None):
+            raise ValueError(f"{self.id}: an attack is set exactly on adversarial questions")
+        if not adversarial and (self.forbidden_text or self.forbidden_files):
+            raise ValueError(f"{self.id}: forbidden text and files are for adversarial questions")
+        return self
+
+    @property
+    def adversarial(self) -> bool:
+        return self.attack is not None
 
 
 class Dataset(_Strict):
