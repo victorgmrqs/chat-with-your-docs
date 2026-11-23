@@ -9,140 +9,21 @@ keys/models set, the `live` tests run the same contract against the real APIs.
 import json
 import logging
 import os
-from collections.abc import Callable, Iterator
-from dataclasses import dataclass
-from typing import Any
 
 import pytest
-from pydantic import BaseModel, SecretStr
+from pydantic import SecretStr
 
 from app.adapters.anthropic_chat import AnthropicChatAdapter
-from app.adapters.langchain_chat import LangChainChatAdapter
 from app.adapters.openai_chat import OpenAIChatAdapter
 from app.application.ports import ChatModelPort, ChatPrompt
 from app.application.prompts import AnswerDraft, RerankDraft
 from app.domain.answers import ChatModelTimeout, ChatModelUnavailable
-from tests.provider_stub import Hang, JsonReply, ProviderStub, provider_stub
+from tests.chat_providers import REFUSAL_TEXT, TIMEOUT_SECONDS, Harness
+from tests.provider_stub import Hang, JsonReply
 
 PRIVATE_QUESTION = "What is the coworking limit for project Zephyr?"
 PROMPT = ChatPrompt(system="Answer with citations.", user=PRIVATE_QUESTION)
 ANSWER = {"outcome": "answered", "answer": "US$ 250 [S1].", "closest_source_id": None}
-
-
-def _openai_body(payload: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "id": "chatcmpl-1",
-        "object": "chat.completion",
-        "created": 0,
-        "model": "gpt-test",
-        "choices": [
-            {
-                "index": 0,
-                "finish_reason": "stop",
-                "message": {"role": "assistant", "content": json.dumps(payload)},
-            }
-        ],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
-    }
-
-
-def _anthropic_body(payload: dict[str, Any], schema: type[BaseModel]) -> dict[str, Any]:
-    return {
-        "id": "msg_1",
-        "type": "message",
-        "role": "assistant",
-        "model": "claude-test",
-        "content": [
-            {"type": "tool_use", "id": "toolu_1", "name": schema.__name__, "input": payload}
-        ],
-        "stop_reason": "tool_use",
-        "stop_sequence": None,
-        "usage": {"input_tokens": 10, "output_tokens": 5},
-    }
-
-
-TIMEOUT_SECONDS = 0.5
-
-
-def _openai(base_url: str) -> LangChainChatAdapter:
-    return OpenAIChatAdapter(
-        "gpt-test",
-        SecretStr("sk-test"),
-        max_tokens=100,
-        timeout_seconds=TIMEOUT_SECONDS,
-        max_retries=0,
-        base_url=f"{base_url}/v1",
-    )
-
-
-def _anthropic(base_url: str) -> LangChainChatAdapter:
-    return AnthropicChatAdapter(
-        "claude-test",
-        SecretStr("sk-ant-test"),
-        max_tokens=100,
-        timeout_seconds=TIMEOUT_SECONDS,
-        max_retries=0,
-        base_url=base_url,
-    )
-
-
-REFUSAL_TEXT = "I cannot help with the Zephyr request."
-
-
-def _openai_refusal() -> dict[str, Any]:
-    body = _openai_body({})
-    body["choices"][0]["message"] = {"role": "assistant", "content": None, "refusal": REFUSAL_TEXT}
-    return body
-
-
-def _anthropic_refusal() -> dict[str, Any]:
-    body = _anthropic_body({}, AnswerDraft)
-    body["content"] = [{"type": "text", "text": REFUSAL_TEXT}]
-    body["stop_reason"] = "refusal"
-    return body
-
-
-@dataclass(frozen=True)
-class Provider:
-    name: str
-    model: str
-    path: str
-    build: Callable[[str], LangChainChatAdapter]
-    body: Callable[[dict[str, Any], type[BaseModel]], dict[str, Any]]
-    refusal: Callable[[], dict[str, Any]]
-
-
-PROVIDERS = [
-    Provider(
-        "openai",
-        "gpt-test",
-        "/v1/chat/completions",
-        _openai,
-        lambda p, _: _openai_body(p),
-        _openai_refusal,
-    ),
-    Provider(
-        "anthropic", "claude-test", "/v1/messages", _anthropic, _anthropic_body, _anthropic_refusal
-    ),
-]
-
-
-@dataclass(frozen=True)
-class Harness:
-    provider: Provider
-    stub: ProviderStub
-
-    def reply(self, payload: dict[str, Any], schema: type[BaseModel] = AnswerDraft) -> None:
-        self.stub.replies.append(JsonReply(self.provider.body(payload, schema)))
-
-    def adapter(self) -> LangChainChatAdapter:
-        return self.provider.build(self.stub.base_url)
-
-
-@pytest.fixture(params=PROVIDERS, ids=lambda p: p.name)
-def harness(request: pytest.FixtureRequest) -> Iterator[Harness]:
-    with provider_stub() as stub:
-        yield Harness(request.param, stub)
 
 
 async def test_chat_model_port_contract_answer_schema(harness: Harness) -> None:

@@ -20,11 +20,6 @@ LIMIT = "Coworking reimbursement is limited to US$ 250 per month per employee."
 OFFICE = "The office opens at 8 a.m. and closes at 7 p.m. on business days."
 
 
-@pytest.fixture
-def retriever(engine: AsyncEngine) -> PostgresRetriever:
-    return PostgresRetriever(engine)
-
-
 async def _ready_document(
     repository: PostgresDocumentRepository,
     embeddings: EmbeddingPort,
