@@ -221,15 +221,18 @@ class FakeChatModel:
 
     A reply is a schema instance, an exception to raise, or a callable that builds the
     instance from the prompt (for tests that need the labels the use case assigned).
-    Every successful call reports USAGE_PER_CALL, as a provider would (DOM-24).
+    Every successful call reports USAGE_PER_CALL, as a provider would (DOM-24), unless
+    `reports_usage` says otherwise: False for every call, or one flag per call in order
+    (a provider that returns no usage metadata).
     """
 
     provider = "fake"
     model = "fake-chat-model"
     USAGE_PER_CALL = TokenUsage("fake-chat-model-2026", input_tokens=100, output_tokens=20)
 
-    def __init__(self, *replies: Reply) -> None:
+    def __init__(self, *replies: Reply, reports_usage: bool | Sequence[bool] = True) -> None:
         self._replies = list(replies)
+        self._reports_usage = reports_usage if isinstance(reports_usage, bool) else [*reports_usage]
         self.prompts: list[ChatPrompt] = []
 
     async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> Generation[T]:
@@ -240,7 +243,10 @@ class FakeChatModel:
         result = reply if isinstance(reply, BaseModel) else reply(prompt)
         if not isinstance(result, schema):
             raise TypeError(f"scripted reply {type(result).__name__} is not a {schema.__name__}")
-        return Generation(result, (self.USAGE_PER_CALL,))
+        reports = self._reports_usage
+        if not isinstance(reports, bool):
+            reports = reports.pop(0)
+        return Generation(result, (self.USAGE_PER_CALL,) if reports else ())
 
 
 class FakeRetriever:

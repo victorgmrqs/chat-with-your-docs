@@ -62,7 +62,9 @@ class Settings(HttpSettings):
     otel_service_name: str = "cwyd-backend"
     otel_traces_sampler_arg: float = Field(default=1.0, ge=0, le=1)  # share of traces kept
     capture_content: bool = False  # DOM-22: dev only; content goes to span events
-    price_table_path: Path = Path("app/prices.yaml")  # DOM-24, relative to backend/
+    # DOM-24. The default sits next to this module, wherever the process starts (CWYD-27);
+    # an explicit PRICE_TABLE_PATH is used as given.
+    price_table_path: Path = Path(__file__).resolve().parent / "prices.yaml"
 
     @field_validator("database_url")
     @classmethod

@@ -245,6 +245,12 @@ class AnswerQuestion:
                 t.OUTCOME: trace_outcome,
                 t.INVALID_CITATIONS: run.invalid_citations,
                 t.RERANKED: run.reranked,
+            }
+        )
+        if not run.usage:  # DOM-24: no call reported usage, so no totals and no cost, never 0
+            return
+        span.set_attributes(
+            {
                 t.GEN_AI_INPUT_TOKENS: sum(u.input_tokens for u in run.usage),
                 t.GEN_AI_OUTPUT_TOKENS: sum(u.output_tokens for u in run.usage),
             }

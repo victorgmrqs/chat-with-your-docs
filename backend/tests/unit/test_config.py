@@ -1,6 +1,9 @@
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from app.adapters.price_table import load_price_table
 from app.config import ConfigurationError, HttpSettings, load_settings
 from tests.factories import REQUIRED_ENV
 
@@ -111,3 +114,22 @@ def test_api_root_path_must_be_an_absolute_path_without_trailing_slash(value: st
     """CWYD-20: compared verbatim with X-Forwarded-Prefix; a malformed value never matches."""
     with pytest.raises(ValidationError):
         HttpSettings(api_root_path=value)
+
+
+@pytest.mark.usefixtures("valid_env")
+def test_price_table_default_independent_of_cwd(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CWYD-27: the default resolves from the app package, wherever the process starts."""
+    monkeypatch.chdir(tmp_path)
+
+    settings = load_settings()
+
+    assert settings.price_table_path.is_absolute()
+    assert load_price_table(settings.price_table_path).prices
+
+
+def test_price_table_path_from_env_is_used_as_given(valid_env: pytest.MonkeyPatch) -> None:
+    valid_env.setenv("PRICE_TABLE_PATH", "config/prices.yaml")
+
+    assert load_settings().price_table_path == Path("config/prices.yaml")

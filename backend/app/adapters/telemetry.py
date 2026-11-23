@@ -4,8 +4,17 @@ Switching the tracing backend (Jaeger, a collector, a vendor) is configuration o
 OTEL_TRACES_EXPORTER and OTEL_EXPORTER_OTLP_ENDPOINT.
 """
 
-from opentelemetry import trace
+from opentelemetry import propagate, trace
+from opentelemetry.context import Context
 from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
+from opentelemetry.propagators.textmap import (
+    CarrierT,
+    Getter,
+    Setter,
+    TextMapPropagator,
+    default_getter,
+    default_setter,
+)
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter, SpanExporter
@@ -42,11 +51,43 @@ def build_tracer_provider(settings: Settings) -> TracerProvider | None:
     return provider
 
 
+class _NoPropagation(TextMapPropagator):
+    """Extracts an empty context (a new trace, sampled by our own sampler) and injects nothing."""
+
+    def extract(
+        self,
+        carrier: CarrierT,
+        context: Context | None = None,
+        getter: Getter[CarrierT] = default_getter,
+    ) -> Context:
+        return Context()
+
+    def inject(
+        self,
+        carrier: CarrierT,
+        context: Context | None = None,
+        setter: Setter[CarrierT] = default_setter,
+    ) -> None:
+        return None
+
+    @property
+    def fields(self) -> set[str]:
+        return set()
+
+
+def ignore_client_trace_context() -> None:
+    """The API is public: incoming traceparent, tracestate and baggage are not extracted, so a
+    client cannot join our spans to its trace or force sampling; every request starts a new
+    trace (CWYD-27). X-Request-ID is separate and unchanged (DOM-23)."""
+    propagate.set_global_textmap(_NoPropagation())
+
+
 def configure_tracing(settings: Settings) -> TracerProvider | None:
     """Install the process-wide provider; the caller shuts it down (flushes) on exit.
 
     OpenTelemetry accepts one provider per process: a second call is ignored with a warning.
     """
+    ignore_client_trace_context()
     provider = build_tracer_provider(settings)
     if provider is not None:
         trace.set_tracer_provider(provider)

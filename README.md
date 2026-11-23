@@ -62,7 +62,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `OTEL_SERVICE_NAME` | no (`cwyd-backend`)            | Service name shown in Jaeger                    |
 | `OTEL_TRACES_SAMPLER_ARG` | no (1.0)                 | Share of new traces kept (0-1)                  |
 | `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
-| `PRICE_TABLE_PATH`  | no (`app/prices.yaml`)         | Chat model prices for the estimated cost, relative to `backend/` |
+| `PRICE_TABLE_PATH`  | no (bundled `app/prices.yaml`) | Chat model prices for the estimated cost; a relative value resolves from the working directory |
 | `API_DOCS_ENABLED`  | no (true)                      | `false` removes `/docs`, `/redoc` and `/openapi.json` (404); set it in production |
 | `API_ROOT_PATH`     | no (/api)                      | Prefix the web server proxies to the API; must match its `X-Forwarded-Prefix` |
 | `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
@@ -224,7 +224,9 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 - The trace root is the HTTP request span that FastAPI's native telemetry adds (route, status
   code, total latency, plus `fastapi.*` operation spans); `rag.chat` and `ingest.document` are the
   pipeline spans inside it. Indexing runs after the `202`, in the upload request's trace.
-  `/health*` probes are not traced.
+  `/health*` probes are not traced. A client's `traceparent`, `tracestate` and `baggage` headers
+  are ignored: every request starts its own trace (`X-Request-ID` is the correlation key), and
+  FastAPI's telemetry exports no logs.
 - With `CHAT_PROVIDER=anthropic`, the Anthropic SDK adds its own `anthropic.messages.create`
   spans under `rerank` and `answer_generation` (metadata only by default; they include the
   Anthropic organization and workspace ids). Never set
@@ -236,8 +238,9 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 - `rag.chat` records `app.outcome` (`answered`, `refused` or `error`), provider and
   model, input/output tokens and `app.cost.usd`, the estimated cost from
   [`backend/app/prices.yaml`](backend/app/prices.yaml) (USD per million tokens, matched by
-  model-name prefix). A model missing from the table records no cost. The RAG evaluation reads
-  the same table.
+  model-name prefix). A model missing from the table records no cost; a question where no model
+  call reported usage (e.g. refused before any call) records no tokens and no cost, never 0. The
+  RAG evaluation reads the same table.
 - A failed step has error status and `error.type` (the exception class), never the exception
   message or stack trace.
 - Span attributes never carry question, prompt, chunk or answer text. `CAPTURE_CONTENT=true` adds

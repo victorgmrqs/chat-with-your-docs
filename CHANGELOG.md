@@ -95,6 +95,13 @@ All notable changes to this project are documented here. The format follows
   the golden metrics stay comparable) now runs with every evaluation and is reported in its own
   section; the regression tolerance is documented in `docs/eval/README.md`
   ([CWYD-21](https://goncalvesmarques.atlassian.net/browse/CWYD-21)).
+- Tracing no longer trusts the client or reports what it does not know: a request's
+  `traceparent`, `tracestate` and `baggage` headers are ignored, so every request starts its own
+  trace and a client cannot join our spans or force sampling; FastAPI's telemetry exports no
+  logs (they carry exception messages); a question whose model calls reported no usage records
+  no token totals and no cost instead of 0; and the default `PRICE_TABLE_PATH` resolves from the
+  app package, whatever the working directory
+  ([CWYD-27](https://goncalvesmarques.atlassian.net/browse/CWYD-27)).
 
 ### Maintenance
 
