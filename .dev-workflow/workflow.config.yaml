@@ -126,15 +126,24 @@ integrations:
     fallback: local
 
 loop:
-  enabled: false
-  scope_jql: "sprint in openSprints()"
+  enabled: true
+  # Board 138 is kanban (no sprints): "the sprint" is the epic's cards; the /sprint candidate query
+  # adds the auto-ok label itself.
+  scope_jql: "parent = CWYD-1"
   repo_label: ""
-  required_check: ""
+  required_check: ci-gate        # required by the development ruleset (always-run job)
   max_cards: 8
-  merge_method: merge
+  merge_method: squash           # the development ruleset allows squash only
   stop_file: .loop-stop
   poll_seconds: 480
   qa_marker: "QA after merge: yes"
+  # Second reviewer from another vendor before every merge (dev-workflow 0.8.0): blocks on REPROVADO.
+  external_review:
+    tool: agy
+    model: "gemini-4-hydrogen-xhigh"   # switch model here if the quota runs out
+    blocking: true
+    max_diff_chars: 120000
+    timeout_seconds: 600
   external_review_cmd: ""
   confluence_mode: pending
   confluence_append_pages: []
@@ -151,6 +160,7 @@ loop:
     - .dev-workflow/
     - scripts/loop/
     - scripts/docs-guard.sh
+    - .devcontainer/
   labels:
     opt_in: auto-ok
     owned: sprint-auto
