@@ -50,6 +50,12 @@ services:
     build: ./frontend
     environment:
       BACKEND_URL: http://backend:8000
+      # Rate limits (CWYD-18): set them in .env; same defaults as the image.
+      RATE_LIMIT_CHAT: ${RATE_LIMIT_CHAT:-10r/m}
+      RATE_LIMIT_CHAT_BURST: ${RATE_LIMIT_CHAT_BURST:-5}
+      RATE_LIMIT_CHAT_CONNECTIONS: ${RATE_LIMIT_CHAT_CONNECTIONS:-2}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-6r/m}
+      RATE_LIMIT_UPLOAD_BURST: ${RATE_LIMIT_UPLOAD_BURST:-3}
     depends_on:
       backend:
         condition: service_healthy

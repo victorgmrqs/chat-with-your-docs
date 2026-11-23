@@ -1,0 +1,41 @@
+# CWYD-18 — rate limits at the web server (DOM-27). Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client). Limits are per client address and
+# apply only through the web server (:8080); direct calls to the API (:8000) are not limited.
+# Defaults: questions 10/min, burst 5, 2 at a time; uploads 6/min, burst 3 (RATE_LIMIT_* in .env).
+
+# From inside the dev container the published ports live on the host daemon
+# (docker-outside-of-docker): set @host = host.docker.internal there.
+@host = localhost
+@web = http://{{host}}:8080
+
+### Question: send it 7 times within a few seconds. The first 6 (1 + burst 5) reach the API
+# (200, or 409 no_ready_documents without Ready documents); the 7th answers
+# 429 {"code":"rate_limited","detail":"Too many requests. Try again in a minute."}
+# with Retry-After: 60, X-Content-Type-Options, Referrer-Policy and X-Frame-Options.
+POST {{web}}/api/chat
+Content-Type: application/json
+
+{"question": "What is the coworking reimbursement limit?"}
+
+### Upload: send it 5 times within a few seconds (the same file answers 200 after the first 202).
+# The first 4 (1 + burst 3) reach the API; the 5th answers 429 rate_limited with Retry-After.
+POST {{web}}/api/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="office-handbook.txt"
+Content-Type: text/plain
+
+< ../../backend/tests/fixtures/documents/office-handbook.txt
+--cwyd--
+
+### Listing and status polling are never limited: 200 however often it is sent
+GET {{web}}/api/documents
+
+# Shell loops (not REST-client requests):
+#   for i in $(seq 8); do curl -s -o /dev/null -w '%{http_code} ' -H 'Content-Type: application/json' \
+#     -d '{"question":"What is the expense limit?"}' {{web}}/api/chat; done; echo
+#   -> 409 409 409 409 409 409 429 429   (no Ready documents; 200 instead of 409 with one)
+#   curl -s -D - -H 'Content-Type: application/json' -d '{"question":"q"}' {{web}}/api/chat
+#   -> HTTP/1.1 429 Too Many Requests ... Retry-After: 60 ... {"code":"rate_limited",...}
+# Concurrent questions over RATE_LIMIT_CHAT_CONNECTIONS (2) also get 429 while the first ones run.
