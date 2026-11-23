@@ -75,3 +75,7 @@ All notable changes to this project are documented here. The format follows
   merge to `development` needs the `ci-gate` check and an approval from a second reviewer from
   another vendor (agy, blocking); `scripts/loop/` holds the launcher and the loop's permission denies
   ([CWYD-25](https://goncalvesmarques.atlassian.net/browse/CWYD-25)).
+- Security review skills and rules for agents: `owasp-security` (OWASP Top 10, ASVS, LLM Top 10)
+  and a read-only `differential-review` (git history, blast radius), both pinned and security-reviewed
+  copies, plus path-scoped rules for nginx headers and limits, upload validation and LLM/RAG code
+  ([CWYD-17](https://goncalvesmarques.atlassian.net/browse/CWYD-17)).

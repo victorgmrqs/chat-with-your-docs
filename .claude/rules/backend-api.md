@@ -21,6 +21,8 @@ paths:
 - `detail` never carries exception text, SQL, provider messages or document content.
 - Liveness (`/health`) does no I/O. Readiness (`/health/ready`) checks every hard dependency
   and is what Compose, k8s probes and the frontend `depends_on` wait on.
-- New or changed routes get an entry in `docs/http/<card>.http` with the expected response.
+- New or changed routes get an entry in the resource's `docs/http/<resource>.http` file
+  (`documents`, `chat`, `health`, ...) with the expected response; a cross-cutting concern
+  gets its own file (`security.http`, `observability.http`). No per-card files.
 
 - Reference implementation: `ready()` in `backend/app/api/health.py`.
