@@ -1,6 +1,23 @@
+# Security headers (CWYD-14). The CSP fits the Vite build: one module script and one stylesheet
+# from /assets, bundled fonts, same-origin API; React `style` props go through the CSSOM, which
+# style-src does not restrict. API responses get none (empty value = header not sent): JSON needs
+# no CSP and Swagger UI loads an inline script and CDN assets.
+map $uri $content_security_policy {
+    ~^/api/ "";
+    default "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+}
+
 server {
     listen 8080;
     root /usr/share/nginx/html;
+
+    # Locations that declare their own add_header keep these instead of dropping them (nginx
+    # 1.29.3+); `always` covers error responses too.
+    add_header_inherit merge;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy $content_security_policy always;
 
     location /api/ {
         # Uploads: nginx defaults to 1 MB. MAX_UPLOAD_MB (10) plus multipart overhead;

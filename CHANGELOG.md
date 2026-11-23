@@ -57,6 +57,15 @@ All notable changes to this project are documented here. The format follows
   unexpected failure answers `500 internal_error`
   ([CWYD-12](https://goncalvesmarques.atlassian.net/browse/CWYD-12)).
 
+### Security
+
+- Every web server response, errors included, carries `X-Content-Type-Options: nosniff`,
+  `Referrer-Policy: strict-origin-when-cross-origin` and `X-Frame-Options: DENY`; the app also
+  gets a same-origin `Content-Security-Policy`, while `/api/` responses (JSON, Swagger UI) do not.
+  `API_DOCS_ENABLED=false` (default `true`; production sets it) makes `/docs`, `/redoc` and
+  `/openapi.json` return `404`
+  ([CWYD-14](https://goncalvesmarques.atlassian.net/browse/CWYD-14)).
+
 ### Maintenance
 
 - AI-assisted development foundation: workflow configuration, path-scoped rules, 10 curated and

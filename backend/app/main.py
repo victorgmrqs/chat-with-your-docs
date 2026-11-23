@@ -12,7 +12,7 @@ from app.api.errors import register_error_handlers
 from app.api.request_id import add_request_id
 from app.application.ports import ChatModelPort, EmbeddingPort
 from app.composition import Container, build_container
-from app.config import Settings, load_settings
+from app.config import HttpSettings, Settings, load_settings
 
 logger = logging.getLogger(__name__)
 
@@ -61,12 +61,16 @@ def create_app(
             # collector is gone), so off the event loop.
             await asyncio.to_thread(tracer_provider.shutdown)
 
+    docs = (settings or HttpSettings()).api_docs_enabled
+
     # FastAPI's native telemetry adds the HTTP server span (the trace root, route and status)
     # and operation spans around our pipeline spans whenever a tracer provider is set. It
     # records exceptions by type only, like ours (DOM-22).
     app = FastAPI(
         title="Chat With Your Docs API",
         lifespan=lifespan,
+        # None also drops /docs and /redoc; app.openapi() still builds the schema for the export.
+        openapi_url="/openapi.json" if docs else None,
         telemetry={"exclude": _is_health_probe},
     )
     app.middleware("http")(add_request_id)

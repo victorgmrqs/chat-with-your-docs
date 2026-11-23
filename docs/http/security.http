@@ -1,0 +1,33 @@
+# CWYD-14 — security headers and the API docs switch. Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client). Check the response headers, not the body.
+
+# From inside the dev container the published ports live on the host daemon
+# (docker-outside-of-docker): set @host = host.docker.internal there.
+@host = localhost
+@api = http://{{host}}:8000
+@web = http://{{host}}:8080
+
+### SPA: 200 with X-Content-Type-Options: nosniff, Referrer-Policy: strict-origin-when-cross-origin,
+# X-Frame-Options: DENY and Content-Security-Policy: default-src 'self'; ... frame-ancestors 'none'
+HEAD {{web}}/
+
+### Assets location: missing file, still 404 with the four headers and the location's own
+# Cache-Control (an existing /assets/index-*.js, from the <script> tag of GET {{web}}/, gives 200)
+HEAD {{web}}/assets/missing.js
+
+### API through the proxy: 200 with nosniff, Referrer-Policy and X-Frame-Options, no CSP
+GET {{web}}/api/health
+
+# Upload rejected by nginx itself (body over 11 MB): 413 {"code":"file_too_large",...} with the
+# four headers. Not a REST-client request (needs a large file):
+#   head -c 12000000 /dev/zero > /tmp/big.txt && curl -si -F file=@/tmp/big.txt {{web}}/api/documents
+
+### API docs, default API_DOCS_ENABLED=true: 200 for /docs, /redoc and /openapi.json
+GET {{api}}/docs
+
+###
+GET {{api}}/openapi.json
+
+### With API_DOCS_ENABLED=false in .env (then `docker compose up -d backend`):
+# 404 {"detail":"Not Found"} for /docs, /redoc and /openapi.json; /health stays 200
+GET {{api}}/redoc
