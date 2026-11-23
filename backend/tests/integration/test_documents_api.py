@@ -1,7 +1,9 @@
 """The ingestion scenarios through HTTP: real PostgreSQL, declared embedding fakes."""
 
 import asyncio
+import logging
 import uuid
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -20,7 +22,7 @@ from tests.factories import (
     fixture_bytes,
     stored_chunks,
 )
-from tests.fakes import FailingEmbeddings, FakeEmbeddings
+from tests.fakes import FailingEmbeddings, FakeEmbeddings, MisconfiguredEmbeddings
 
 pytestmark = pytest.mark.integration
 
@@ -106,6 +108,68 @@ def test_document_ingestion_file_too_large(documents_client_for: ClientFactory) 
     assert response.json()["code"] == "file_too_large"
 
 
+def test_ingestion_body_over_limit(documents_client_for: ClientFactory) -> None:
+    """DOM-26: a direct API upload over MAX_UPLOAD_MB + 1 MB is cut off by the middleware."""
+    client = documents_client_for(max_upload_mb=1)
+
+    response = _upload(client, "big.txt", b"a" * (3 * 1024 * 1024))
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "file_too_large"
+    assert response.json()["request_id"] == response.headers["X-Request-ID"]
+    assert client.get("/documents").json() == []
+
+
+def test_ingestion_body_over_limit_without_content_length(
+    documents_client_for: ClientFactory,
+) -> None:
+    client = documents_client_for(max_upload_mb=1)
+
+    def chunked_body() -> Iterator[bytes]:  # no Content-Length: counted as it streams
+        yield b'--b\r\nContent-Disposition: form-data; name="file"; filename="big.txt"\r\n\r\n'
+        for _ in range(12):
+            yield b"a" * (256 * 1024)
+        yield b"\r\n--b--\r\n"
+
+    response = client.post(
+        "/documents",
+        content=chunked_body(),
+        headers={"Content-Type": "multipart/form-data; boundary=b"},
+    )
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "file_too_large"
+    assert response.json()["request_id"] == response.headers["X-Request-ID"]
+
+
+def test_ingestion_dimension_mismatch(documents_client_for: ClientFactory) -> None:
+    """DOM-26: EMBEDDING_DIMENSIONS differs from vector(1536): readiness and uploads say so."""
+    client = documents_client_for(embedding_dimensions=EMBEDDING_DIMENSIONS + 1)
+
+    ready = client.get("/health/ready")
+    upload = _upload(client, "office-handbook.txt")
+
+    assert ready.status_code == 503
+    assert ready.json() == {"detail": "embedding dimension mismatch"}
+    assert upload.status_code == 503
+    assert upload.json()["code"] == "embedding_dimension_mismatch"
+    assert "EMBEDDING_DIMENSIONS" in upload.json()["detail"]
+    assert client.get("/documents").json() == []  # nothing stored
+
+
+def test_ingestion_dimension_mismatch_logged_at_startup(
+    documents_client_for: ClientFactory, caplog: pytest.LogCaptureFixture
+) -> None:
+    with caplog.at_level(logging.ERROR, logger="app.main"):
+        documents_client_for(embedding_dimensions=EMBEDDING_DIMENSIONS + 1)
+
+    errors = [r for r in caplog.records if r.levelno == logging.ERROR]
+    assert [r.getMessage() for r in errors] == [
+        f"Embedding dimension mismatch: EMBEDDING_DIMENSIONS={EMBEDDING_DIMENSIONS + 1}, "
+        f"chunks.embedding={EMBEDDING_DIMENSIONS}"
+    ]
+
+
 def test_document_ingestion_traced_inside_the_upload_request(
     documents_client_for: ClientFactory, spans: InMemorySpanExporter
 ) -> None:
@@ -134,6 +198,7 @@ def test_document_ingestion_no_extractable_text(documents_client_for: ClientFact
     assert document["status"] == "failed"
     assert document["failure_reason"] == "no_extractable_text"
     assert "selectable text" in document["failure_message"]
+    assert document["can_retry"] is False
 
 
 def test_document_ingestion_indexing_failure(documents_client_for: ClientFactory) -> None:
@@ -145,6 +210,32 @@ def test_document_ingestion_indexing_failure(documents_client_for: ClientFactory
     assert document["status"] == "failed"
     assert document["failure_reason"] == "indexing_failed"
     assert "Upload the same file again" in document["failure_message"]
+
+
+def test_document_ingestion_provider_misconfigured(documents_client_for: ClientFactory) -> None:
+    client = documents_client_for(MisconfiguredEmbeddings())
+
+    accepted = _upload(client, "expense-policy.pdf")
+    document = client.get(f"/documents/{accepted.json()['id']}").json()
+
+    assert document["status"] == "failed"
+    assert document["failure_reason"] == "provider_misconfigured"
+    assert "EMBEDDING_MODEL" in document["failure_message"]
+    assert document["can_retry"] is True
+
+
+def test_document_ingestion_retry_after_provider_misconfigured(
+    documents_client_for: ClientFactory,
+) -> None:
+    failed = _upload(documents_client_for(MisconfiguredEmbeddings()), "expense-policy.pdf").json()
+    client = documents_client_for()  # the operator fixed the key or model
+
+    retried = _upload(client, "expense-policy.pdf")
+    document = client.get(f"/documents/{failed['id']}").json()
+
+    assert retried.status_code == 202
+    assert retried.json()["id"] == failed["id"]
+    assert document["status"] == "ready"
 
 
 def test_document_ingestion_duplicate_upload(documents_client_for: ClientFactory) -> None:

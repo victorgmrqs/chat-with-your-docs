@@ -15,11 +15,13 @@ describe('formatCounts', () => {
 })
 
 describe('toDocumentItem', () => {
-  it('offers Retry only for a transient indexing failure (DOM-03, DOM-04)', () => {
-    const failed = (failure_reason: 'indexing_failed' | 'no_extractable_text') =>
-      toDocumentItem(documentResponse({ status: 'failed', failure_reason, failure_message: MESSAGES.indexingFailed }))
+  it("offers Retry as the backend's can_retry says (DOM-04, DOM-25)", () => {
+    const failed = (can_retry: boolean) =>
+      toDocumentItem(
+        documentResponse({ status: 'failed', failure_reason: 'indexing_failed', failure_message: MESSAGES.indexingFailed, can_retry }),
+      )
 
-    expect(failed('indexing_failed')).toMatchObject({ status: 'failed', canRetry: true, failureMessage: MESSAGES.indexingFailed })
-    expect(failed('no_extractable_text').canRetry).toBe(false)
+    expect(failed(true)).toMatchObject({ status: 'failed', canRetry: true, failureMessage: MESSAGES.indexingFailed })
+    expect(failed(false).canRetry).toBe(false)
   })
 })

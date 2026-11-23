@@ -9,7 +9,7 @@ export interface DocumentItem {
   status: DocumentStatus
   /** Backend message for a failed document (DOM-03); shown as is. */
   failureMessage?: string | null
-  /** True for transient failures: uploading the same file again indexes it (DOM-04). */
+  /** True for failures that do not depend on the file: uploading it again indexes it (DOM-04). */
   canRetry?: boolean
 }
 
@@ -48,7 +48,6 @@ export function toDocumentItem(response: DocumentResponse): DocumentItem {
     filename: response.filename,
     status: response.status,
     failureMessage: response.failure_message,
-    // DOM-03/04: only a transient failure is indexed again when the same file is uploaded.
-    canRetry: response.failure_reason === 'indexing_failed',
+    canRetry: response.can_retry, // DOM-04: decided by the backend
   }
 }

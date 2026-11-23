@@ -4,12 +4,16 @@ import openai
 from langchain_openai import OpenAIEmbeddings
 from pydantic import SecretStr
 
-from app.application.ports import EmbeddingUnavailable
+from app.application.ports import EmbeddingMisconfigured, EmbeddingUnavailable
+
+# DOM-25: the key or the model is wrong; retrying will not help until the operator fixes it.
+_MISCONFIGURED = (openai.AuthenticationError, openai.PermissionDeniedError, openai.NotFoundError)
 
 
 class OpenAIEmbeddingAdapter:
     """EmbeddingPort over OpenAI. The client retries transient errors (429, 5xx, timeouts)
-    with exponential backoff; what still fails becomes EmbeddingUnavailable (DOM-03)."""
+    with exponential backoff; what still fails becomes EmbeddingUnavailable (DOM-03). A rejected
+    key or unknown model becomes EmbeddingMisconfigured (DOM-25)."""
 
     def __init__(
         self,
@@ -35,6 +39,8 @@ class OpenAIEmbeddingAdapter:
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         try:
             return await self._client.aembed_documents(list(texts))
-        except openai.OpenAIError as exc:
+        except _MISCONFIGURED as exc:
             # Exception type only: provider messages may echo request content.
+            raise EmbeddingMisconfigured(type(exc).__name__) from exc
+        except openai.OpenAIError as exc:
             raise EmbeddingUnavailable(type(exc).__name__) from exc

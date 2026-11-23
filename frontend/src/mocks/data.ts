@@ -12,6 +12,8 @@ export const MESSAGES = {
   noExtractableText:
     'No selectable text was found (for example a scanned PDF). Upload another version with selectable text.',
   indexingFailed: 'Indexing failed for a temporary reason. Upload the same file again to retry.',
+  providerMisconfigured:
+    'The embeddings provider rejected the configured API key or model. Ask the operator to check OPENAI_API_KEY and EMBEDDING_MODEL, then upload the same file again.',
   unsupportedType: (extension: string) =>
     `${extension} is not supported. Upload a .pdf with selectable text, a .md or a .txt file.`,
   emptyFile: 'The file is empty. Upload a .pdf with selectable text, a .md or a .txt file.',
@@ -42,6 +44,7 @@ export function documentResponse(overrides: Partial<DocumentResponse> = {}): Doc
     status: 'ready',
     failure_reason: null,
     failure_message: null,
+    can_retry: false,
     chunk_count: 12,
     created_at: now,
     updated_at: now,

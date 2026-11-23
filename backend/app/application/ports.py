@@ -74,6 +74,12 @@ class EmbeddingUnavailable(Exception):
     """The embeddings provider failed after the adapter's own retries (transient)."""
 
 
+class EmbeddingMisconfigured(EmbeddingUnavailable):
+    """The provider rejected the API key or the model (DOM-25): retrying will not help until
+    the operator fixes the settings. A subclass, so callers that only need "no embedding"
+    (answering, DOM-12) keep handling it as unavailable."""
+
+
 class DocumentParser(Protocol):
     async def parse(self, content: bytes, document_format: DocumentFormat) -> list[Section]:
         """Text per page (PDF), heading section (Markdown) or whole file (text).
@@ -91,8 +97,22 @@ class TextSplitter(Protocol):
 
 class EmbeddingPort(Protocol):
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        """One vector per text, same order. Raises EmbeddingUnavailable."""
+        """One vector per text, same order.
+
+        Raises EmbeddingMisconfigured (key or model rejected) or EmbeddingUnavailable.
+        """
         ...
+
+
+class VectorSchemaPort(Protocol):
+    async def embedding_dimensions(self) -> int | None:
+        """Dimension of the stored embedding column (DOM-26); None when it cannot be read
+        (column missing, no fixed dimension). Raises DatabaseUnavailable."""
+        ...
+
+
+class DocumentNotIndexing(Exception):
+    """A Ready transition for a document that is not `indexing` (DOM-02): nothing was stored."""
 
 
 class DocumentRepository(Protocol):
@@ -105,7 +125,7 @@ class DocumentRepository(Protocol):
     async def list_for_owner(self, owner_id: uuid.UUID) -> list[Document]: ...
 
     async def mark_indexing(self, document_id: uuid.UUID) -> Document | None:
-        """DOM-04: `indexing_failed` → `indexing`; None if not in that state (lost a race)."""
+        """DOM-04: a retryable failure → `indexing`; None if not in that state (lost a race)."""
         ...
 
     async def mark_failed(self, document_id: uuid.UUID, reason: FailureReason) -> None:
@@ -115,7 +135,10 @@ class DocumentRepository(Protocol):
     async def store_chunks_and_mark_ready(
         self, document_id: uuid.UUID, chunks: Sequence[Chunk], embeddings: Sequence[list[float]]
     ) -> None:
-        """Replace the document's chunks and set it Ready in one transaction (DOM-02)."""
+        """Replace the document's chunks and set it Ready in one transaction (DOM-02).
+
+        Raises DocumentNotIndexing, with nothing written, when the document is not `indexing`.
+        """
         ...
 
     async def fail_interrupted_indexing(self) -> int:

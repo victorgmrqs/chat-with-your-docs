@@ -60,11 +60,30 @@ Content-Type: application/pdf
 ### Poll: {"status":"failed","failure_reason":"no_extractable_text","failure_message":"No selectable text was found ..."}
 GET {{api}}/documents/{{scanned.response.body.id}}
 
-### indexing_failure: with an invalid OPENAI_API_KEY (or the provider down) the PDF above ends
+### indexing_failure: with the provider down (timeouts, 429, 5xx) the PDF above ends
 # {"status":"failed","failure_reason":"indexing_failed","failure_message":"... Upload the same file again to retry."}
 # and the backend logs "Indexing failed for document <id>: EmbeddingUnavailable".
-# duplicate_upload: send the first request again (any filename, same bytes):
-# 200 with the same id; an `indexing_failed` document answers 202 and is indexed again.
+# provider_misconfigured (CWYD-16, DOM-25): with an invalid OPENAI_API_KEY (or an unknown
+# EMBEDDING_MODEL) it ends {"status":"failed","failure_reason":"provider_misconfigured",
+# "failure_message":"The embeddings provider rejected the configured API key or model. ..."}
+# and the backend logs at ERROR "Embeddings provider rejected the configuration for document
+# <id>: EmbeddingMisconfigured". Fix the key, restart, upload the same file: 202, same id, ready.
+# duplicate_upload: send the first request again (any filename, same bytes): 200 with the same
+# id; an `indexing_failed` or `provider_misconfigured` document answers 202 and is indexed again.
+
+### Body over MAX_UPLOAD_MB + 1 MB sent straight to the API (CWYD-16, DOM-26): cut off unread,
+# 413 {"code":"file_too_large","detail":"The file is larger than 10 MB. Upload a smaller file.",
+# "request_id":"..."} with the same X-Request-ID header. Not a REST-client request (needs a
+# large file):
+#   head -c 12000000 /dev/zero > /tmp/big.txt && curl -si -F file=@/tmp/big.txt {{api}}/documents
+# Without Content-Length (chunked) the same 413 comes once 11 MB have arrived:
+#   curl -si -H 'Transfer-Encoding: chunked' -F file=@/tmp/big.txt {{api}}/documents
+
+### Embedding dimension mismatch (CWYD-16, DOM-26): with EMBEDDING_DIMENSIONS=768 in .env and
+# `docker compose up -d backend`, uploads answer 503 {"code":"embedding_dimension_mismatch",
+# "detail":"Uploads are unavailable: the embedding settings do not match the database. Ask the
+# operator to check EMBEDDING_DIMENSIONS.","request_id":"..."} and nothing is stored (see
+# health.http for readiness and the startup log line).
 
 ### Empty file: 400 {"code":"empty_file", ...}
 POST {{api}}/documents

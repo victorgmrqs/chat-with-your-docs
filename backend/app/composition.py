@@ -68,12 +68,15 @@ def build_container(
         settings.embedding_model, settings.openai_api_key, settings.embedding_dimensions
     )
     chat = chat or build_chat_model(settings)
+    readiness = PostgresReadiness(engine)
     ingestion = IngestionService(
         PostgresDocumentRepository(engine),
         DocumentParserAdapter(),
         RecursiveTextSplitter(settings.chunk_size, settings.chunk_overlap),
         embeddings,
+        readiness,  # VectorSchemaPort (DOM-26)
         max_upload_bytes=settings.max_upload_bytes,
+        embedding_dimensions=settings.embedding_dimensions,
     )
     prices = load_price_table(settings.price_table_path)
     retriever: RetrieverPort = PostgresRetriever(engine)
@@ -98,7 +101,7 @@ def build_container(
     return Container(
         settings=settings,
         engine=engine,
-        readiness=PostgresReadiness(engine),
+        readiness=readiness,
         ingestion=ingestion,
         answering=answering,
         prices=prices,

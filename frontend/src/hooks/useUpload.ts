@@ -6,7 +6,7 @@ import type { UploadRejection } from '@/components/DocumentSidebar'
 /**
  * Uploads files one request each. A rejection (DOM-01) or failed request is shown with the
  * backend's message (DOM-16). Files are kept by document id for this session, so a document that
- * failed with indexing_failed can be sent again without picking it (DOM-04).
+ * failed with a retryable reason can be sent again without picking it (DOM-04).
  */
 export function useUpload(onUploaded: (document: DocumentResponse) => void) {
   const [rejection, setRejection] = useState<UploadRejection | null>(null)

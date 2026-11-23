@@ -21,12 +21,14 @@ from app.application.ports import (
     DocumentRepository,
     EmbeddingPort,
     RetrieverPort,
+    VectorSchemaPort,
 )
 from app.application.reranking import LLMReranker
 from app.config import Settings
 from app.domain.answers import RetrievedChunk
 from app.domain.documents import Document, DocumentFormat, DocumentStatus
 from app.domain.usage import PriceTable
+from tests.fakes import FixedVectorSchema
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = BACKEND_DIR / "tests" / "fixtures" / "documents"
@@ -169,12 +171,18 @@ def make_ingestion(
     repository: DocumentRepository,
     embeddings: EmbeddingPort,
     max_upload_bytes: int = MAX_UPLOAD_BYTES,
+    schema: VectorSchemaPort | None = None,
 ) -> IngestionService:
-    """Parser and splitter are the real, in-process adapters: deterministic, no I/O."""
+    """Parser and splitter are the real, in-process adapters: deterministic, no I/O.
+
+    The vector column matches the setting unless `schema` says otherwise (DOM-26).
+    """
     return IngestionService(
         repository,
         DocumentParserAdapter(),
         RecursiveTextSplitter(chunk_size=500, chunk_overlap=50),
         embeddings,
+        schema or FixedVectorSchema(EMBEDDING_DIMENSIONS),
         max_upload_bytes=max_upload_bytes,
+        embedding_dimensions=EMBEDDING_DIMENSIONS,
     )

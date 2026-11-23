@@ -42,7 +42,7 @@ function App({ pollIntervalMs }: { pollIntervalMs?: number }) {
     if (files.length > 0) void upload(files)
   }
 
-  /** DOM-04: indexing_failed is retried by uploading the same file; after a reload, pick it. */
+  /** DOM-04: a retryable failure is retried by uploading the same file; after a reload, pick it. */
   function retryDocument(document: DocumentItem) {
     const file = fileFor(document.id)
     if (file) void upload([file])

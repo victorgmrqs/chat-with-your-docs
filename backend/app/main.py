@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator, MutableMapping
+from collections.abc import AsyncIterator, Awaitable, MutableMapping
 from contextlib import asynccontextmanager
 from typing import Any
 
@@ -8,11 +8,13 @@ from fastapi import FastAPI
 
 from app.adapters.telemetry import configure_tracing
 from app.api import chat, documents, health
+from app.api.body_limit import BodySizeLimit
 from app.api.errors import register_error_handlers
 from app.api.request_id import add_request_id
 from app.application.ports import ChatModelPort, EmbeddingPort
 from app.composition import Container, build_container
 from app.config import HttpSettings, Settings, load_settings
+from app.domain.documents import EmbeddingDimensionMismatch
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +26,41 @@ def _is_health_probe(scope: MutableMapping[str, Any]) -> bool:
     return str(scope.get("path", "")).startswith("/health")
 
 
-async def _recover_interrupted_indexing(container: Container) -> None:
-    """DOM-03 at startup. Best effort: with the database down the API still starts and
-    /health/ready reports it; the next start retries."""
+async def _best_effort[T](label: str, step: Awaitable[T]) -> T | None:
+    """A startup step that never stops the API: with the database down it still starts,
+    /health/ready reports it and the next start retries. None when skipped."""
     try:
         async with asyncio.timeout(RECOVERY_TIMEOUT_SECONDS):
-            recovered = await container.ingestion.recover_interrupted()
+            return await step
     except Exception as exc:
         error_type = type(exc).__name__
-        logger.warning(
-            "Indexing recovery skipped: %s", error_type, extra={"error_type": error_type}
-        )
-        return
+        logger.warning("%s skipped: %s", label, error_type, extra={"error_type": error_type})
+        return None
+
+
+async def _recover_interrupted_indexing(container: Container) -> None:
+    """DOM-03 at startup."""
+    recovered = await _best_effort("Indexing recovery", container.ingestion.recover_interrupted())
     if recovered:
         logger.info("Interrupted indexing marked as failed: %d", recovered)
+
+
+async def _check_embedding_dimensions(container: Container) -> None:
+    """DOM-26 at startup: a mismatch is logged once. The API still starts; readiness and
+    uploads report it."""
+
+    async def check() -> None:
+        try:
+            await container.ingestion.check_embedding_dimensions()
+        except EmbeddingDimensionMismatch as exc:
+            logger.error(
+                "Embedding dimension mismatch: EMBEDDING_DIMENSIONS=%d, chunks.embedding=%d",
+                exc.configured,
+                exc.stored,
+                extra={"configured_dimensions": exc.configured, "stored_dimensions": exc.stored},
+            )
+
+    await _best_effort("Embedding dimension check", check())
 
 
 def create_app(
@@ -54,6 +77,7 @@ def create_app(
         container = build_container(loaded, embeddings, chat_model)
         app.state.container = container
         await _recover_interrupted_indexing(container)
+        await _check_embedding_dimensions(container)
         yield
         await container.engine.dispose()
         if tracer_provider is not None:
@@ -73,6 +97,13 @@ def create_app(
         openapi_url="/openapi.json" if docs else None,
         telemetry={"exclude": _is_health_probe},
     )
+
+    def loaded_settings() -> Settings | None:
+        container: Container | None = getattr(app.state, "container", None)
+        return container.settings if container is not None else None
+
+    # Added first, so it runs inside the request-id middleware and its 413 carries the id.
+    app.add_middleware(BodySizeLimit, settings=loaded_settings)
     app.middleware("http")(add_request_id)
     register_error_handlers(app)
     app.include_router(health.router)

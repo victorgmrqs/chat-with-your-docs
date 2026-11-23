@@ -11,7 +11,13 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.application.ports import ChatPrompt, EmbeddingUnavailable, Generation
+from app.application.ports import (
+    ChatPrompt,
+    DocumentNotIndexing,
+    EmbeddingMisconfigured,
+    EmbeddingUnavailable,
+    Generation,
+)
 from app.domain.answers import RetrievedChunk
 from app.domain.documents import Chunk, Document, DocumentStatus, FailureReason
 from app.domain.usage import TokenUsage
@@ -36,6 +42,25 @@ class FailingEmbeddings:
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         raise EmbeddingUnavailable("provider unavailable")
+
+
+class MisconfiguredEmbeddings:
+    """Provider rejecting the API key or model (DOM-25): fails until the settings change."""
+
+    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+        raise EmbeddingMisconfigured("AuthenticationError")
+
+
+class FixedVectorSchema:
+    """VectorSchemaPort with a fixed column dimension (None: column not readable)."""
+
+    def __init__(self, dimensions: int | None) -> None:
+        self.dimensions = dimensions
+        self.reads = 0
+
+    async def embedding_dimensions(self) -> int | None:
+        self.reads += 1
+        return self.dimensions
 
 
 class InMemoryDocumentRepository:
@@ -74,6 +99,8 @@ class InMemoryDocumentRepository:
         self, document_id: uuid.UUID, chunks: Sequence[Chunk], embeddings: Sequence[list[float]]
     ) -> None:
         list(zip(chunks, embeddings, strict=True))  # same length check as the adapter
+        if self.documents[document_id].status is not DocumentStatus.INDEXING:
+            raise DocumentNotIndexing(str(document_id))
         self.chunks[document_id] = list(chunks)
         self._set(document_id, status=DocumentStatus.READY, chunk_count=len(chunks))
 

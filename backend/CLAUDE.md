@@ -8,12 +8,18 @@
 - Configuration: `app/config.py` (pydantic-settings). `load_settings()` raises
   `ConfigurationError` naming every missing or empty variable. New settings go there and in
   `.env.example` + README.
-- Health: `GET /health` (liveness, no I/O) and `GET /health/ready` (database + pgvector, 503
-  otherwise). Routes have no `/api` prefix; nginx and the Vite proxy strip it.
+- Health: `GET /health` (liveness, no I/O) and `GET /health/ready` (database + pgvector +
+  embedding column dimension, 503 otherwise). Routes have no `/api` prefix; nginx and the
+  Vite proxy strip it.
 - Documents (CWYD-3): `POST /documents` (202 + `BackgroundTasks` indexing, 200 on duplicate),
   `GET /documents`, `GET /documents/{id}`. Use cases in `app/application/ingestion.py`
   (`IngestionService`), ports in `app/application/ports.py`, rules DOM-01..06 in
   `docs/domain-context.md`. Interrupted `indexing` documents are failed in the lifespan.
+  Hardening (CWYD-16, DOM-25..26): `check_embedding_dimensions` compares the setting with the
+  `chunks.embedding` dimension read by `PostgresReadiness` (`VectorSchemaPort`; readiness,
+  uploads and a startup log); `app/api/body_limit.py` is a pure ASGI middleware cutting off
+  bodies over `MAX_UPLOAD_MB` + 1 MB (`413 file_too_large`); `EmbeddingMisconfigured` (a
+  subclass of `EmbeddingUnavailable`) becomes the retryable `provider_misconfigured`.
 - Chat (CWYD-4): `POST /chat`, use case `AnswerQuestion` in `app/application/answering.py`
   (retrieve -> relevance gate -> optional rerank -> S-labelled context -> structured answer ->
   citation resolution), prompts/structured-output schemas in `app/application/prompts.py`,

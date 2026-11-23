@@ -9,7 +9,9 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.adapters.postgres_connection import database_connection
+from app.application.ports import DocumentNotIndexing
 from app.domain.documents import (
+    RETRYABLE_FAILURES,
     Chunk,
     Document,
     DocumentFormat,
@@ -120,7 +122,7 @@ class PostgresDocumentRepository:
         return [_to_document(row) for row in rows]
 
     async def mark_indexing(self, document_id: uuid.UUID) -> Document | None:
-        """DOM-04 retry: only a transient failure goes back to `indexing` (cleared reason).
+        """DOM-04 retry: only a retryable failure goes back to `indexing` (cleared reason).
 
         None when the document is not in that state, e.g. a concurrent upload already
         started the retry: exactly one caller wins, so one indexing job runs.
@@ -130,7 +132,7 @@ class PostgresDocumentRepository:
             .where(
                 _documents.c.id == document_id,
                 _documents.c.status == DocumentStatus.FAILED.value,
-                _documents.c.failure_reason == FailureReason.INDEXING_FAILED.value,
+                _documents.c.failure_reason.in_([reason.value for reason in RETRYABLE_FAILURES]),
             )
             .values(
                 status=DocumentStatus.INDEXING.value,
@@ -190,12 +192,14 @@ class PostgresDocumentRepository:
                 updated_at=func.now(),
             )
         )
-        # DOM-02: chunks are replaced and the document becomes Ready in one transaction.
+        # DOM-02: chunks are replaced and the document becomes Ready in one transaction, and
+        # only from `indexing`: the state is checked first, so a lost race writes no chunks.
         async with database_connection(self._engine, transaction=True) as connection:
+            if (await connection.execute(mark_ready)).rowcount != 1:
+                raise DocumentNotIndexing(str(document_id))  # rolls the transaction back
             await connection.execute(delete(_chunks).where(_chunks.c.document_id == document_id))
             if rows:  # an empty executemany would run a single insert without values
                 await connection.execute(insert(_chunks), rows)
-            await connection.execute(mark_ready)
 
     async def fail_interrupted_indexing(self) -> int:
         """DOM-03: documents left `indexing` by a restart become `indexing_failed`."""
