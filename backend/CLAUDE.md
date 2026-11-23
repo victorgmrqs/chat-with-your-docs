@@ -36,8 +36,9 @@
 - Tracing (CWYD-12): span/attribute names and helpers (`step`, `record_usage`, `add_content`)
   in `app/application/telemetry.py`, over the OpenTelemetry API only; SDK, sampler and exporter
   in `app/adapters/telemetry.py` (`configure_tracing`, called in the lifespan, shut down on
-  exit), selected by `OTEL_TRACES_EXPORTER` (`none` | `console` | `otlp`). Roots `rag.chat` and
-  `ingest.document`. `ChatModelPort.generate` and `RerankerPort.rerank` return
+  exit), selected by `OTEL_TRACES_EXPORTER` (`none` | `console` | `otlp`). Pipeline spans `rag.chat` and
+  `ingest.document` sit inside FastAPI's native HTTP span (`FastAPI(telemetry=...)` in
+  `app/main.py` excludes `/health*`). `ChatModelPort.generate` and `RerankerPort.rerank` return
   `Generation(value, usage)`; `TokenUsage` / `PriceTable` in `app/domain/usage.py`, loaded from
   `app/prices.yaml` (`PRICE_TABLE_PATH`) by `app/adapters/price_table.py`. Rules DOM-22..24.
   Tests read spans from an in-memory exporter.

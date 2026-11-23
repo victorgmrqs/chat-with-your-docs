@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -16,6 +17,11 @@ from app.config import Settings, load_settings
 logger = logging.getLogger(__name__)
 
 RECOVERY_TIMEOUT_SECONDS = 10
+
+
+def _is_health_probe(scope: MutableMapping[str, Any]) -> bool:
+    """Compose and k8s probe these every few seconds: a trace each would bury the real ones."""
+    return str(scope.get("path", "")).startswith("/health")
 
 
 async def _recover_interrupted_indexing(container: Container) -> None:
@@ -55,7 +61,14 @@ def create_app(
             # collector is gone), so off the event loop.
             await asyncio.to_thread(tracer_provider.shutdown)
 
-    app = FastAPI(title="Chat With Your Docs API", lifespan=lifespan)
+    # FastAPI's native telemetry adds the HTTP server span (the trace root, route and status)
+    # and operation spans around our pipeline spans whenever a tracer provider is set. It
+    # records exceptions by type only, like ours (DOM-22).
+    app = FastAPI(
+        title="Chat With Your Docs API",
+        lifespan=lifespan,
+        telemetry={"exclude": _is_health_probe},
+    )
     app.middleware("http")(add_request_id)
     register_error_handlers(app)
     app.include_router(health.router)

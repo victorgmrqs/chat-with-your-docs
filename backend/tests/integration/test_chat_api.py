@@ -179,9 +179,16 @@ def test_chat_provider_error_is_technical_failure(
     assert body["code"] == "chat_unavailable"
     # DOM-23: the id in the error body finds the failed trace.
     assert body["request_id"] == response.headers["X-Request-ID"]
-    [root] = [span for span in spans.get_finished_spans() if span.name == t.CHAT]
-    assert (root.attributes or {})[t.REQUEST_ID] == body["request_id"]
-    assert root.status.status_code is StatusCode.ERROR
+    finished = {span.name: span for span in spans.get_finished_spans()}
+    pipeline, http = finished[t.CHAT], finished["POST /chat"]
+    assert (pipeline.attributes or {})[t.REQUEST_ID] == body["request_id"]
+    assert pipeline.status.status_code is StatusCode.ERROR
+    # FastAPI's HTTP span is the trace root; the pipeline span sits inside it.
+    assert http.parent is None
+    assert pipeline.context is not None
+    assert http.context is not None
+    assert pipeline.context.trace_id == http.context.trace_id
+    assert (http.attributes or {})["http.response.status_code"] == 502
 
 
 def test_chat_empty_question(client_for: ClientFactory) -> None:

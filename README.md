@@ -205,13 +205,22 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 
 | Trace | Spans | Find it in Jaeger (service `cwyd-backend`) |
 | --- | --- | --- |
-| Question | `rag.chat` → `retrieval.embed_query`, `retrieval.hybrid`, `rerank` (with `RERANK_ENABLED`), `answer_generation` | Tag `app.request_id=<X-Request-ID of the response>` |
-| Ingestion | `ingest.document` → `ingest.parse`, `ingest.chunk`, `ingest.embed`, `ingest.store` | Tag `app.document.id=<document id>` |
+| Question | `POST /chat` → `fastapi.endpoint` → `rag.chat` → `retrieval.embed_query`, `retrieval.hybrid`, `rerank` (with `RERANK_ENABLED`), `answer_generation` | Tag `app.request_id=<X-Request-ID of the response>` |
+| Ingestion | `POST /documents` → `fastapi.background_task` → `ingest.document` → `ingest.parse`, `ingest.chunk`, `ingest.embed`, `ingest.store` | Tag `app.document.id=<document id>` |
 
+- The trace root is the HTTP request span that FastAPI's native telemetry adds (route, status
+  code, total latency, plus `fastapi.*` operation spans); `rag.chat` and `ingest.document` are the
+  pipeline spans inside it. Indexing runs after the `202`, in the upload request's trace.
+  `/health*` probes are not traced.
+- With `CHAT_PROVIDER=anthropic`, the Anthropic SDK adds its own `anthropic.messages.create`
+  spans under `rerank` and `answer_generation` (metadata only by default; they include the
+  Anthropic organization and workspace ids). Never set
+  `ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`: it would put prompts and answers on
+  those spans, bypassing `CAPTURE_CONTENT`.
 - Retrieval is one span: vector search, full-text search and the fusion run as a single SQL
   statement, so its counts (returned, full-text matched, top similarity) are attributes of
   `retrieval.hybrid`.
-- The root of a question records `app.outcome` (`answered`, `refused` or `error`), provider and
+- `rag.chat` records `app.outcome` (`answered`, `refused` or `error`), provider and
   model, input/output tokens and `app.cost.usd`, the estimated cost from
   [`backend/app/prices.yaml`](backend/app/prices.yaml) (USD per million tokens, matched by
   model-name prefix). A model missing from the table records no cost. The RAG evaluation reads
@@ -221,7 +230,8 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 - Span attributes never carry question, prompt, chunk or answer text. `CAPTURE_CONTENT=true` adds
   that text as span events for local debugging; keep it `false` anywhere real documents are used.
 - Every request in [`docs/http/observability.http`](docs/http/observability.http) produces one of
-  these traces. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-22..24).
+  these traces; screenshots of each are in [`docs/evidence/CWYD-12/`](docs/evidence/CWYD-12/).
+  Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-22..24).
 
 ## Troubleshooting
 
