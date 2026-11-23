@@ -1,10 +1,15 @@
-"""One handler maps every DomainError to its HTTP status and the {code, detail} envelope."""
+"""One handler maps every DomainError to its HTTP status and the {code, detail, request_id}
+envelope; unexpected failures get the same envelope with a generic message (DOM-23)."""
+
+import logging
+import uuid
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from app.adapters.postgres_connection import DatabaseUnavailable
+from app.api.request_id import REQUEST_ID_HEADER, request_id_of
 from app.domain.answers import (
     ChatModelTimeout,
     ChatModelUnavailable,
@@ -36,9 +41,15 @@ _STATUS_BY_ERROR: dict[type[DomainError], int] = {
 }
 
 
+logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR_DETAIL = "Something went wrong on our side. Try again later."
+
+
 class DomainErrorResponse(BaseModel):
     code: str  # stable identifier for clients (e.g. `unsupported_type`)
     detail: str  # user-facing message that says what to do instead
+    request_id: uuid.UUID  # DOM-23: quote it when reporting a problem; finds the trace
 
 
 def error_response(description: str) -> dict[str, object]:
@@ -51,17 +62,43 @@ DATABASE_UNAVAILABLE: dict[int | str, dict[str, object]] = {
 }
 
 
+def _error(request: Request, code: str, detail: str, status_code: int) -> JSONResponse:
+    request_id = request_id_of(request)  # made here if the request-id middleware did not run
+    body = DomainErrorResponse(code=code, detail=detail, request_id=request_id)
+    return JSONResponse(
+        body.model_dump(mode="json"),
+        status_code=status_code,
+        headers={REQUEST_ID_HEADER: str(request_id)},
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        body = DomainErrorResponse(code=exc.code, detail=exc.message)
-        return JSONResponse(
-            body.model_dump(),
-            status_code=_STATUS_BY_ERROR.get(type(exc), status.HTTP_400_BAD_REQUEST),
-        )
+        status_code = _STATUS_BY_ERROR.get(type(exc), status.HTTP_400_BAD_REQUEST)
+        return _error(request, exc.code, exc.message, status_code)
 
     @app.exception_handler(DatabaseUnavailable)
     async def database_unavailable(request: Request, exc: DatabaseUnavailable) -> JSONResponse:
         # Short, stable text: never the driver message (backend-api rule).
-        body = DomainErrorResponse(code="database_unavailable", detail="database unavailable")
-        return JSONResponse(body.model_dump(), status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+        return _error(
+            request,
+            "database_unavailable",
+            "database unavailable",
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
+
+    @app.exception_handler(Exception)
+    async def internal_error(request: Request, exc: Exception) -> JSONResponse:
+        # Runs in Starlette's outermost middleware (after the request-id middleware): the
+        # header is set here. The server still logs the traceback after this response.
+        error_type, request_id = type(exc).__name__, str(request_id_of(request))
+        logger.error(
+            "Unhandled %s for request %s",
+            error_type,
+            request_id,
+            extra={"request_id": request_id, "error_type": error_type},
+        )
+        return _error(
+            request, "internal_error", INTERNAL_ERROR_DETAIL, status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

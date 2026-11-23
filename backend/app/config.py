@@ -1,4 +1,5 @@
 import uuid
+from pathlib import Path
 from typing import Literal, Self
 
 from pydantic import (
@@ -42,6 +43,14 @@ class Settings(BaseSettings):
     chat_max_retries: int = Field(default=2, ge=0)
     # Unset: the provider's default. Some models (e.g. reasoning models) reject the parameter.
     chat_temperature: float | None = Field(default=None, ge=0, le=2)
+
+    # Tracing (CWYD-12), standard OpenTelemetry variable names. `none` sets up nothing.
+    otel_traces_exporter: Literal["none", "console", "otlp"] = "none"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4318"  # base URL; /v1/traces is added
+    otel_service_name: str = "cwyd-backend"
+    otel_traces_sampler_arg: float = Field(default=1.0, ge=0, le=1)  # share of traces kept
+    capture_content: bool = False  # DOM-22: dev only; content goes to span events
+    price_table_path: Path = Path("app/prices.yaml")  # DOM-24, relative to backend/
 
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 

@@ -151,7 +151,18 @@ async def test_chat_model_port_contract_answer_schema(harness: Harness) -> None:
 
     result = await adapter.generate(PROMPT, AnswerDraft)
 
-    assert result == AnswerDraft.model_validate(ANSWER)
+    assert result.value == AnswerDraft.model_validate(ANSWER)
+
+
+async def test_chat_model_port_contract_reports_token_usage(harness: Harness) -> None:
+    # DOM-24: the usage the provider reported, keyed by the model name it reported.
+    harness.reply(ANSWER)
+
+    result = await harness.adapter().generate(PROMPT, AnswerDraft)
+
+    [usage] = result.usage
+    assert usage.model.startswith(harness.provider.model)
+    assert (usage.input_tokens, usage.output_tokens) == (10, 5)
 
 
 async def test_chat_model_port_contract_rerank_schema(harness: Harness) -> None:
@@ -159,7 +170,7 @@ async def test_chat_model_port_contract_rerank_schema(harness: Harness) -> None:
 
     result = await harness.adapter().generate(PROMPT, RerankDraft)
 
-    assert result.source_ids == ["S2", "S1"]
+    assert result.value.source_ids == ["S2", "S1"]
 
 
 async def test_chat_model_port_contract_sends_system_and_user(harness: Harness) -> None:
@@ -265,5 +276,6 @@ async def test_chat_model_port_contract_live(name: str) -> None:
 
     result = await _live_adapter(name).generate(prompt, AnswerDraft)
 
-    assert result.outcome == "answered"
-    assert "[S1]" in result.answer
+    assert result.value.outcome == "answered"
+    assert "[S1]" in result.value.answer
+    assert result.usage  # DOM-24: real providers report token usage

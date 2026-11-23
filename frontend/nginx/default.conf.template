@@ -13,7 +13,8 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Same {code, detail} envelope as the API when nginx itself rejects the body.
+    # Same {code, detail} envelope as the API when nginx itself rejects the body. No request_id:
+    # the request never reaches the API, so there is no trace to point at (DOM-23).
     location @upload_too_large {
         default_type application/json;
         return 413 '{"code":"file_too_large","detail":"The file is too large. Upload a smaller file."}';

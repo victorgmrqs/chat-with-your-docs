@@ -26,6 +26,9 @@ services:
         required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cwyd}:${POSTGRES_PASSWORD:-cwyd}@db:5432/${POSTGRES_DB:-cwyd}
+      # Used only with OTEL_TRACES_EXPORTER=otlp; the jaeger service runs under the
+      # `observability` profile, so the backend never depends on it.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
     depends_on:
       db:
         condition: service_healthy
@@ -79,6 +82,22 @@ services:
     depends_on:
       backend:  # applies the migrations
         condition: service_healthy
+
+  # Tracing (CWYD-12): `docker compose --profile observability up --build --wait` with
+  # OTEL_TRACES_EXPORTER=otlp in .env. Jaeger UI on :16686; OTLP/HTTP receiver on the
+  # internal network only (backend -> jaeger:4318). In-memory storage: traces are lost on restart.
+  jaeger:
+    profiles: [observability]
+    image: jaegertracing/jaeger:2.23.0
+    ports:
+      - "127.0.0.1:16686:16686"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:13133/status"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
 
 volumes:
   db-data:

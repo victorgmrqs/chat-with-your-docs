@@ -24,12 +24,24 @@
   `ChatModelUnavailable` without provider text), selected by `CHAT_PROVIDER` in
   `app/composition.py`.
 - RAG evaluation (CWYD-11): `eval/` (Dockerfile target `eval`, built only by the Compose `eval` profile).
-  `dataset.yaml` golden questions, `configs.yaml` configurations + price snapshot, `runner.py`
+  `dataset.yaml` golden questions, `configs.yaml` configurations (prices: `app/prices.yaml`,
+  shared with the API), `runner.py`
   drives the real container (`build_container(wrap_retriever=...)` records retrieval), pure
   scoring in `scoring.py` (DOM-20/21), reports to `docs/eval/`. `python -m eval.run [--config N]`.
 - Errors: domain errors subclass `DomainError` (`code` + message); `app/api/errors.py` maps each
-  to its status and the `{code, detail}` body. Routes get the container via
-  `app/api/dependencies.py:get_container`.
+  to its status and the `{code, detail, request_id}` body, plus a generic `500 internal_error`
+  for anything unhandled. `app/api/request_id.py`: middleware that sets `X-Request-ID` on every
+  response (`request_id_of(request)`, never client-supplied; DOM-23). Routes get the container
+  via `app/api/dependencies.py:get_container`.
+- Tracing (CWYD-12): span/attribute names and helpers (`step`, `record_usage`, `add_content`)
+  in `app/application/telemetry.py`, over the OpenTelemetry API only; SDK, sampler and exporter
+  in `app/adapters/telemetry.py` (`configure_tracing`, called in the lifespan, shut down on
+  exit), selected by `OTEL_TRACES_EXPORTER` (`none` | `console` | `otlp`). Pipeline spans `rag.chat` and
+  `ingest.document` sit inside FastAPI's native HTTP span (`FastAPI(telemetry=...)` in
+  `app/main.py` excludes `/health*`). `ChatModelPort.generate` and `RerankerPort.rerank` return
+  `Generation(value, usage)`; `TokenUsage` / `PriceTable` in `app/domain/usage.py`, loaded from
+  `app/prices.yaml` (`PRICE_TABLE_PATH`) by `app/adapters/price_table.py`. Rules DOM-22..24.
+  Tests read spans from an in-memory exporter.
 - Schema: Alembic, hand-written revisions in `migrations/versions/` (`target_metadata = None`;
   never edit an applied revision, add a new one). The image runs `alembic upgrade head` before
   uvicorn; integration tests run the same upgrade in `tests/conftest.py`.

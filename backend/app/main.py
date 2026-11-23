@@ -1,12 +1,15 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, MutableMapping
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 
+from app.adapters.telemetry import configure_tracing
 from app.api import chat, documents, health
 from app.api.errors import register_error_handlers
+from app.api.request_id import add_request_id
 from app.application.ports import ChatModelPort, EmbeddingPort
 from app.composition import Container, build_container
 from app.config import Settings, load_settings
@@ -14,6 +17,11 @@ from app.config import Settings, load_settings
 logger = logging.getLogger(__name__)
 
 RECOVERY_TIMEOUT_SECONDS = 10
+
+
+def _is_health_probe(scope: MutableMapping[str, Any]) -> bool:
+    """Compose and k8s probe these every few seconds: a trace each would bury the real ones."""
+    return str(scope.get("path", "")).startswith("/health")
 
 
 async def _recover_interrupted_indexing(container: Container) -> None:
@@ -41,13 +49,27 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        container = build_container(settings or load_settings(), embeddings, chat_model)
+        loaded = settings or load_settings()
+        tracer_provider = configure_tracing(loaded)  # None with OTEL_TRACES_EXPORTER=none
+        container = build_container(loaded, embeddings, chat_model)
         app.state.container = container
         await _recover_interrupted_indexing(container)
         yield
         await container.engine.dispose()
+        if tracer_provider is not None:
+            # Flushes the spans still batched; blocking (up to the export timeout when the
+            # collector is gone), so off the event loop.
+            await asyncio.to_thread(tracer_provider.shutdown)
 
-    app = FastAPI(title="Chat With Your Docs API", lifespan=lifespan)
+    # FastAPI's native telemetry adds the HTTP server span (the trace root, route and status)
+    # and operation spans around our pipeline spans whenever a tracer provider is set. It
+    # records exceptions by type only, like ours (DOM-22).
+    app = FastAPI(
+        title="Chat With Your Docs API",
+        lifespan=lifespan,
+        telemetry={"exclude": _is_health_probe},
+    )
+    app.middleware("http")(add_request_id)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(documents.router)

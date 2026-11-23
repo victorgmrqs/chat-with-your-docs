@@ -13,8 +13,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
 from testcontainers.community.postgres import PostgresContainer
 
+from app.application import telemetry as t
 from app.application.ports import ChatModelPort, ChatPrompt
 from app.application.prompts import AnswerDraft
 from app.domain.answers import INSUFFICIENT_EVIDENCE_MESSAGE, ChatModelTimeout, ChatModelUnavailable
@@ -164,13 +167,28 @@ def test_chat_provider_timeout_is_technical_failure(client_for: ClientFactory) -
     assert response.json()["code"] == "chat_timeout"
 
 
-def test_chat_provider_error_is_technical_failure(client_for: ClientFactory) -> None:
+def test_chat_provider_error_is_technical_failure(
+    client_for: ClientFactory, spans: InMemorySpanExporter
+) -> None:
     client = client_for(ChatModelUnavailable())
 
     response = client.post("/chat", json={"question": "What is the coworking limit?"})
 
     assert response.status_code == 502
-    assert response.json()["code"] == "chat_unavailable"
+    body = response.json()
+    assert body["code"] == "chat_unavailable"
+    # DOM-23: the id in the error body finds the failed trace.
+    assert body["request_id"] == response.headers["X-Request-ID"]
+    finished = {span.name: span for span in spans.get_finished_spans()}
+    pipeline, http = finished[t.CHAT], finished["POST /chat"]
+    assert (pipeline.attributes or {})[t.REQUEST_ID] == body["request_id"]
+    assert pipeline.status.status_code is StatusCode.ERROR
+    # FastAPI's HTTP span is the trace root; the pipeline span sits inside it.
+    assert http.parent is None
+    assert pipeline.context is not None
+    assert http.context is not None
+    assert pipeline.context.trace_id == http.context.trace_id
+    assert (http.attributes or {})["http.response.status_code"] == 502
 
 
 def test_chat_empty_question(client_for: ClientFactory) -> None:

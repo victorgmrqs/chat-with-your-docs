@@ -10,11 +10,13 @@ from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
 from app.adapters.postgres_documents import PostgresDocumentRepository
 from app.adapters.postgres_readiness import PostgresReadiness
 from app.adapters.postgres_retriever import PostgresRetriever
+from app.adapters.price_table import load_price_table
 from app.application.answering import AnsweringLimits, AnswerQuestion
 from app.application.ingestion import IngestionService
 from app.application.ports import ChatModelPort, EmbeddingPort, RetrieverPort
 from app.application.reranking import LLMReranker
 from app.config import Settings
+from app.domain.usage import PriceTable
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +28,7 @@ class Container:
     readiness: PostgresReadiness
     ingestion: IngestionService
     answering: AnswerQuestion
+    prices: PriceTable  # DOM-24; also read by the RAG evaluation
 
 
 def build_chat_model(settings: Settings) -> ChatModelPort:
@@ -72,6 +75,7 @@ def build_container(
         embeddings,
         max_upload_bytes=settings.max_upload_bytes,
     )
+    prices = load_price_table(settings.price_table_path)
     retriever: RetrieverPort = PostgresRetriever(engine)
     if wrap_retriever is not None:
         retriever = wrap_retriever(retriever)
@@ -88,6 +92,8 @@ def build_container(
             context_token_budget=settings.context_token_budget,
         ),
         reranker=LLMReranker(chat) if settings.rerank_enabled else None,
+        prices=prices,  # DOM-24
+        capture_content=settings.capture_content,  # DOM-22
     )
     return Container(
         settings=settings,
@@ -95,4 +101,5 @@ def build_container(
         readiness=PostgresReadiness(engine),
         ingestion=ingestion,
         answering=answering,
+        prices=prices,
     )

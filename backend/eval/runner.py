@@ -16,13 +16,15 @@ from typing import Any
 
 from langchain_core.callbacks import get_usage_metadata_callback
 
+from app.adapters.langchain_chat import token_usage
 from app.application.answering import AnswerQuestion
 from app.application.ingestion import IngestionService
 from app.application.ports import ChatModelPort, EmbeddingPort, RetrieverPort
 from app.composition import Container, build_container
 from app.config import Settings
 from app.domain.documents import DomainError
-from eval.dataset import Dataset, EvalConfig, EvalPlan, GoldenQuestion
+from app.domain.usage import PriceTable
+from eval.dataset import Dataset, EvalConfig, GoldenQuestion
 from eval.recording import RecordingRetriever
 from eval.scoring import ChunkRef, Observation, QuestionScore, Summary, score_question, summarize
 
@@ -127,7 +129,7 @@ async def ask(
     recorder: RecordingRetriever,
     owner_id: uuid.UUID,
     question: GoldenQuestion,
-    plan: EvalPlan,
+    prices: PriceTable,
 ) -> Observation:
     """One question; a domain failure becomes the question's error (DOM-21), not a crash.
 
@@ -135,7 +137,8 @@ async def ask(
     """
     recorder.reset()
     started = time.perf_counter()
-    with get_usage_metadata_callback() as usage:
+    # Context-wide, so a question that fails after a model call still counts its tokens.
+    with get_usage_metadata_callback() as callback:
         try:
             answer = await answering.answer(owner_id, question.question)
             error = None
@@ -143,26 +146,16 @@ async def ask(
             answer, error = None, type(exc).__name__
     latency_ms = (time.perf_counter() - started) * 1000
 
-    used = usage.usage_metadata
-    prices = {model_name: plan.price_for(model_name) for model_name in used}
-    cost = (
-        None  # a model without a configured price: unknown, never a wrong number
-        if any(price is None for price in prices.values())
-        else sum(
-            (u["input_tokens"] * p.input + u["output_tokens"] * p.output) / 1e6
-            for model_name, u in used.items()
-            if (p := prices[model_name]) is not None
-        )
-    )
+    usage = token_usage(callback)
     return Observation(
         question_id=question.id,
         outcome=answer.outcome.value if answer else None,
         retrieved=[ChunkRef.of(chunk) for chunk in recorder.last],
         cited=[ChunkRef.of(source.passage) for source in answer.sources] if answer else [],
         latency_ms=latency_ms,
-        input_tokens=sum(u["input_tokens"] for u in used.values()),
-        output_tokens=sum(u["output_tokens"] for u in used.values()),
-        cost_usd=cost,
+        input_tokens=sum(u.input_tokens for u in usage),
+        output_tokens=sum(u.output_tokens for u in usage),
+        cost_usd=prices.cost(usage),  # DOM-24: None when a model has no price
         error=error,
         reranked=answer.reranked if answer else False,
     )
@@ -172,7 +165,6 @@ async def evaluate(
     container: Container,
     recorder: RecordingRetriever,
     dataset: Dataset,
-    plan: EvalPlan,
     config: EvalConfig,
     documents_dir: Path,
 ) -> RunResult:
@@ -184,7 +176,7 @@ async def evaluate(
     )
     scores = []
     for question in dataset.questions:
-        observation = await ask(container.answering, recorder, owner_id, question, plan)
+        observation = await ask(container.answering, recorder, owner_id, question, container.prices)
         scores.append(score_question(question, observation))
     return RunResult(
         config=config,

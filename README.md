@@ -54,6 +54,12 @@ Every variable is listed in [`.env.example`](.env.example).
 | `CHAT_TIMEOUT_SECONDS` | no (30)                     | Per-attempt chat provider timeout               |
 | `CHAT_MAX_RETRIES`  | no (2)                         | Retries on timeouts, 429 and 5xx                |
 | `CHAT_TEMPERATURE`  | no (unset)                     | Sent only when set; some models reject it       |
+| `OTEL_TRACES_EXPORTER` | no (`none`)                 | Tracing: `none`, `console` (stdout) or `otlp` (Jaeger) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | no (Compose: `http://jaeger:4318`) | OTLP/HTTP base URL; `/v1/traces` is added. Jaeger's OTLP port is not published, so `otlp` reaches it only from inside Compose |
+| `OTEL_SERVICE_NAME` | no (`cwyd-backend`)            | Service name shown in Jaeger                    |
+| `OTEL_TRACES_SAMPLER_ARG` | no (1.0)                 | Share of new traces kept (0-1)                  |
+| `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
+| `PRICE_TABLE_PATH`  | no (`app/prices.yaml`)         | Chat model prices for the estimated cost, relative to `backend/` |
 | `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
@@ -93,10 +99,14 @@ curl -s localhost:8000/documents        # all documents, newest first
   document that failed with `indexing_failed` (temporary: embeddings provider or database
   unavailable) is indexed again on re-upload (`202`, same id); `no_extractable_text` (for
   example a scanned PDF) needs another version of the file.
-- Errors use one envelope, `{"code": "...", "detail": "..."}`: `415 unsupported_type`,
-  `413 file_too_large`, `400 empty_file`, `404 document_not_found`, `503 database_unavailable`. Through the frontend proxy
+- Errors use one envelope, `{"code": "...", "detail": "...", "request_id": "..."}`:
+  `415 unsupported_type`, `413 file_too_large`, `400 empty_file`, `404 document_not_found`,
+  `503 database_unavailable`, and `500 internal_error` with a generic message for any unexpected
+  failure. `request_id` equals the `X-Request-ID` header every response carries; quote it when
+  reporting a problem (see [Tracing](#tracing)). Through the frontend proxy
   (`:8080/api`), nginx accepts bodies up to 11 MB (10 MB plus multipart overhead) and answers
-  larger ones with the same `413 file_too_large` envelope; raise `client_max_body_size` in
+  larger ones with `413 file_too_large` (`code` and `detail` only: the request never reaches the
+  API, so there is no `request_id` or trace); raise `client_max_body_size` in
   `frontend/nginx/default.conf.template` together with `MAX_UPLOAD_MB`.
 - A document left `indexing` by a restart is marked `failed` / `indexing_failed` when the API
   starts; upload it again to retry.
@@ -132,8 +142,8 @@ curl -s localhost:8000/chat -H 'Content-Type: application/json' \
   retrieval_unavailable` (the question could not be embedded), `504 chat_timeout`,
   `503 database_unavailable`. Provider failures are never reported as insufficient evidence.
 - `CHAT_PROVIDER` (`openai` or `anthropic`) and `CHAT_MODEL` select the chat model; every
-  response carries `provider` and `model`. Logs record outcome, counts, timings, provider and
-  model, never the question, prompt, sources or answer.
+  response carries `provider` and `model`. Logs and traces record outcome, counts, timings,
+  provider, model and tokens, never the question, prompt, sources or answer.
 - Every request in [`docs/http/chat.http`](docs/http/chat.http) can be run against the Compose
   stack; the expected evidence per case is in
   [`backend/tests/fixtures/rag_cases.json`](backend/tests/fixtures/rag_cases.json). Business
@@ -178,6 +188,50 @@ questions are already refused before the chat model is called. Each configuratio
 the code defaults of the RAG settings, not from the local `.env`, so runs are comparable. Method,
 metrics and limits: [`docs/eval/README.md`](docs/eval/README.md). Business rules:
 [`docs/domain-context.md`](docs/domain-context.md) (DOM-20, DOM-21).
+
+## Tracing
+
+The API emits OpenTelemetry traces, off by default (`OTEL_TRACES_EXPORTER=none`). To see them in
+Jaeger, set `OTEL_TRACES_EXPORTER=otlp` in `.env` and start the stack with the `observability`
+profile:
+
+```bash
+docker compose --profile observability up --build --wait   # Jaeger UI on http://localhost:16686
+```
+
+`OTEL_TRACES_EXPORTER=console` prints the spans to the backend's stdout instead
+(`docker compose logs backend`), with no extra service. Jaeger keeps traces in memory: they are
+lost when it restarts. Its OTLP receiver is reachable only from the Compose network.
+
+| Trace | Spans | Find it in Jaeger (service `cwyd-backend`) |
+| --- | --- | --- |
+| Question | `POST /chat` → `fastapi.endpoint` → `rag.chat` → `retrieval.embed_query`, `retrieval.hybrid`, `rerank` (with `RERANK_ENABLED`), `answer_generation` | Tag `app.request_id=<X-Request-ID of the response>` |
+| Ingestion | `POST /documents` → `fastapi.background_task` → `ingest.document` → `ingest.parse`, `ingest.chunk`, `ingest.embed`, `ingest.store` | Tag `app.document.id=<document id>` |
+
+- The trace root is the HTTP request span that FastAPI's native telemetry adds (route, status
+  code, total latency, plus `fastapi.*` operation spans); `rag.chat` and `ingest.document` are the
+  pipeline spans inside it. Indexing runs after the `202`, in the upload request's trace.
+  `/health*` probes are not traced.
+- With `CHAT_PROVIDER=anthropic`, the Anthropic SDK adds its own `anthropic.messages.create`
+  spans under `rerank` and `answer_generation` (metadata only by default; they include the
+  Anthropic organization and workspace ids). Never set
+  `ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`: it would put prompts and answers on
+  those spans, bypassing `CAPTURE_CONTENT`.
+- Retrieval is one span: vector search, full-text search and the fusion run as a single SQL
+  statement, so its counts (returned, full-text matched, top similarity) are attributes of
+  `retrieval.hybrid`.
+- `rag.chat` records `app.outcome` (`answered`, `refused` or `error`), provider and
+  model, input/output tokens and `app.cost.usd`, the estimated cost from
+  [`backend/app/prices.yaml`](backend/app/prices.yaml) (USD per million tokens, matched by
+  model-name prefix). A model missing from the table records no cost. The RAG evaluation reads
+  the same table.
+- A failed step has error status and `error.type` (the exception class), never the exception
+  message or stack trace.
+- Span attributes never carry question, prompt, chunk or answer text. `CAPTURE_CONTENT=true` adds
+  that text as span events for local debugging; keep it `false` anywhere real documents are used.
+- Every request in [`docs/http/observability.http`](docs/http/observability.http) produces one of
+  these traces; screenshots of each are in [`docs/evidence/CWYD-12/`](docs/evidence/CWYD-12/).
+  Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-22..24).
 
 ## Troubleshooting
 

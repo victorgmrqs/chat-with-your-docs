@@ -189,11 +189,17 @@
           "detail": {
             "title": "Detail",
             "type": "string"
+          },
+          "request_id": {
+            "format": "uuid",
+            "title": "Request Id",
+            "type": "string"
           }
         },
         "required": [
           "code",
-          "detail"
+          "detail",
+          "request_id"
         ],
         "title": "DomainErrorResponse",
         "type": "object"

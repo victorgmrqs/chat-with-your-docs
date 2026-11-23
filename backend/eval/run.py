@@ -39,11 +39,11 @@ def _selected(plan: EvalPlan, names: list[str] | None) -> list[EvalConfig]:
 
 
 async def _run_one(
-    base: Settings, config: EvalConfig, dataset: Dataset, plan: EvalPlan, documents: Path
+    base: Settings, config: EvalConfig, dataset: Dataset, documents: Path
 ) -> RunResult:
     container, recorder = build_eval_container(configured_settings(base, config))
     try:
-        return await evaluate(container, recorder, dataset, plan, config, documents)
+        return await evaluate(container, recorder, dataset, config, documents)
     finally:
         await container.engine.dispose()
 
@@ -55,7 +55,7 @@ async def _main(args: argparse.Namespace) -> None:
     results = []
     for config in configs:
         print(f"Running {config.name} ({len(dataset.questions)} questions)...", flush=True)
-        result = await _run_one(base, config, dataset, plan, args.documents)
+        result = await _run_one(base, config, dataset, args.documents)
         write_run(result, args.out)
         results.append(result)
         s = result.summary

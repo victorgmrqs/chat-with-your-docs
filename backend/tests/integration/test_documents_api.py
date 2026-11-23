@@ -7,9 +7,11 @@ from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
+from app.application import telemetry as t
 from app.application.ports import EmbeddingPort
 from app.config import Settings
 from app.main import create_app
@@ -127,6 +129,25 @@ def test_document_ingestion_file_too_large(client_for: ClientFactory) -> None:
     assert response.json()["code"] == "file_too_large"
 
 
+def test_document_ingestion_traced_inside_the_upload_request(
+    client_for: ClientFactory, spans: InMemorySpanExporter
+) -> None:
+    # CWYD-12: the background job runs after the 202, inside the upload's trace.
+    client = client_for()
+
+    accepted = _upload(client, "office-handbook.txt")
+
+    finished = {span.name: span for span in spans.get_finished_spans()}
+    http, ingest = finished["POST /documents"], finished[t.INGEST]
+    assert http.parent is None
+    assert ingest.context is not None
+    assert http.context is not None
+    assert ingest.context.trace_id == http.context.trace_id
+    attributes = ingest.attributes or {}
+    assert attributes[t.DOCUMENT_ID] == accepted.json()["id"]
+    assert attributes[t.DOCUMENT_STATUS] == "ready"
+
+
 def test_document_ingestion_no_extractable_text(client_for: ClientFactory) -> None:
     client = client_for()
 
@@ -190,5 +211,7 @@ def test_documents_api_database_unavailable(unreachable_settings: Settings) -> N
         uploaded = _upload(client, "office-handbook.txt")
 
     assert listed.status_code == 503
-    assert listed.json() == {"code": "database_unavailable", "detail": "database unavailable"}
+    body = listed.json()
+    assert (body["code"], body["detail"]) == ("database_unavailable", "database unavailable")
+    assert body["request_id"] == listed.headers["X-Request-ID"]  # DOM-23
     assert uploaded.status_code == 503

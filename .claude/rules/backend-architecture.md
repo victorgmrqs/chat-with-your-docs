@@ -9,8 +9,14 @@ paths:
   `adapters` (LLM, embeddings, Postgres, parsers) → `api` (FastAPI routers, DTOs).
   Imports point inward only; `domain` and `application` never import FastAPI, LangChain,
   SQLAlchemy, provider SDKs or `os.environ`.
+- Tracing exception: `application` may import only the vendor-neutral OpenTelemetry API
+  (`opentelemetry.trace` and its types, a no-op without an SDK); span/attribute names and the
+  span helpers come from `app/application/telemetry.py`. The OpenTelemetry SDK and exporters
+  (`opentelemetry.sdk`, `opentelemetry.exporter.*`) live only in `app/adapters/telemetry.py`;
+  `domain` imports no OpenTelemetry at all.
 - Ports are `typing.Protocol` classes in `application`: `ChatModelPort`, `EmbeddingPort`,
   `DocumentRepository`, `RetrieverPort`, `DocumentParserPort`. Adapters implement them.
+  Model calls return `Generation(value, usage)` so the use case records tokens (DOM-24).
 - Routes are thin: validate the request DTO, call one use case obtained through `Depends`,
   map the result to a response DTO. No SQL, LangChain or SDK calls in routers.
   Exception: infrastructure probes (`/health*`) have no business logic and call their adapter
@@ -30,7 +36,11 @@ paths:
 - Errors: domain raises typed exceptions (`DocumentNotFound`, `UnsupportedFormat`,
   `InsufficientEvidence`…); one exception handler maps them to HTTP status and a stable error
   code. Never leak stack traces or provider messages to clients.
-- Observability: one span per pipeline step; attributes carry sizes, counts, scores, model names
-  and token usage, never question, prompt, chunk or answer text.
+- Observability: one span per real pipeline step (no span for work that is not a separate
+  call, e.g. the parts of one SQL statement), opened with `telemetry.step`; span and attribute
+  names only from `app/application/telemetry.py`. Attributes carry sizes, counts, scores, ids,
+  model names and token usage, never question, prompt, chunk or answer text; that text goes
+  only to span events via `add_content`, gated by `CAPTURE_CONTENT` (DOM-22). Failures record
+  error status and `error.type`, never the exception message or stack trace.
 - Typing: mypy strict must pass; no `Any` in public signatures; no `# type: ignore` without a
   reason comment.

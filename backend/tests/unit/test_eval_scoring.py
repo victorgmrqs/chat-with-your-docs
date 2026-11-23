@@ -2,7 +2,6 @@
 
 import uuid
 from datetime import UTC, datetime
-from pathlib import Path
 from typing import Any
 
 import pytest
@@ -231,20 +230,6 @@ def test_rag_eval_report_generated_with_failed_questions() -> None:
     assert "error: ChatModelUnavailable" in report
     assert "| Questions (errors) | 2 (1) |" in report
     assert comparison.count("| Correct refusal rate |") == 1
-
-
-def test_price_matches_reported_model_by_prefix(tmp_path: Path) -> None:
-    plan_file = tmp_path / "plan.yaml"
-    plan_file.write_text(
-        "prices_usd_per_million_tokens:\n"
-        "  model-a: {input: 1, output: 2}\n"
-        "  model-a-mini: {input: 0.1, output: 0.2}\n"
-        "configurations: [{name: base, description: d}]\n"
-    )
-    plan = load_plan(plan_file)
-
-    assert plan.price_for("model-a-mini-2026") == plan.prices_usd_per_million_tokens["model-a-mini"]
-    assert plan.price_for("other") is None
 
 
 def test_rag_eval_reciprocal_rank_rewards_top_ranks() -> None:

@@ -50,7 +50,7 @@ dev container resolve on the host). Without Docker, from `backend/` with the dat
 | Citation validity | Answers whose every cited chunk was retrieved for that question and matches an expected source |
 | Citation recall | Share of expected sources the answer cites |
 | Latency p50 / p95 | Wall time of `AnswerQuestion.answer` per question (embedding, retrieval, rerank, generation) |
-| Tokens, chat cost | Chat-model tokens reported by the provider (answer and rerank calls) priced with `configs.yaml`; the query embedding is not priced |
+| Tokens, chat cost | Chat-model tokens reported by the provider (answer and rerank calls) priced with [`backend/app/prices.yaml`](../../backend/app/prices.yaml), the table the API uses for its traces (DOM-24); the query embedding is not priced |
 
 ## Results (2026-11-22, `claude-haiku-5-5`, `text-embedding-3-small`)
 
@@ -91,4 +91,4 @@ Full tables: [`comparison.md`](comparison.md) and the per-configuration reports.
 - LLM outputs are not deterministic: outcomes were stable across runs, latency and tokens vary by
   a few percent, and p95 over 13 questions is one slow provider call (rerank's 16.7 s). A
   transient provider error appears as an error row; re-run the configuration.
-- Prices in `configs.yaml` are a dated snapshot; a model without a price shows the cost as `n/a`.
+- Prices in `backend/app/prices.yaml` are a dated snapshot; a model without a price shows the cost as `n/a`.
