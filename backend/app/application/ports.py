@@ -9,6 +9,15 @@ from pydantic import BaseModel
 
 from app.domain.answers import RetrievedChunk
 from app.domain.documents import Chunk, Document, DocumentFormat, FailureReason, Section
+from app.domain.usage import TokenUsage
+
+
+@dataclass(frozen=True, slots=True)
+class Generation[T]:
+    """A model call's result and the tokens it used (DOM-24); empty when none was reported."""
+
+    value: T
+    usage: tuple[TokenUsage, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,8 +35,8 @@ class ChatModelPort(Protocol):
     @property
     def model(self) -> str: ...
 
-    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> T:
-        """A validated instance of `schema`.
+    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> Generation[T]:
+        """A validated instance of `schema` and the token usage the provider reported.
 
         Raises ChatModelTimeout or ChatModelUnavailable (DOM-12) after the adapter's retries.
         """
@@ -56,7 +65,7 @@ class RetrieverPort(Protocol):
 class RerankerPort(Protocol):
     async def rerank(
         self, question: str, chunks: Sequence[RetrievedChunk], top_n: int
-    ) -> list[RetrievedChunk]:
+    ) -> Generation[list[RetrievedChunk]]:
         """At most `top_n` of `chunks`, most relevant first. Raises like ChatModelPort."""
         ...
 

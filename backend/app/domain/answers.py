@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from app.domain.documents import DomainError
+from app.domain.usage import TokenUsage
 
 # DOM-10: written by the backend, never by the model.
 INSUFFICIENT_EVIDENCE_MESSAGE = (
@@ -140,6 +141,7 @@ class Answer:
     provider: str  # DOM-13
     model: str
     reranked: bool
+    usage: tuple[TokenUsage, ...] = ()  # DOM-24: every chat model call of this question
 
 
 @dataclass(frozen=True, slots=True)

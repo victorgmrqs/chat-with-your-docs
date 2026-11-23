@@ -3,7 +3,6 @@ import uuid
 
 import pytest
 
-from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
 from app.application.ingestion import IngestionService
 from app.application.ports import EmbeddingPort
 from app.domain.documents import (
@@ -15,11 +14,10 @@ from app.domain.documents import (
     FileTooLarge,
     UnsupportedFormat,
 )
-from tests.factories import fixture_bytes
+from tests.factories import MAX_UPLOAD_BYTES, fixture_bytes, make_ingestion
 from tests.fakes import FailingEmbeddings, FakeEmbeddings, InMemoryDocumentRepository
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
-MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
 
 def _service(
@@ -27,14 +25,7 @@ def _service(
     embeddings: EmbeddingPort | None = None,
     max_upload_bytes: int = MAX_UPLOAD_BYTES,
 ) -> IngestionService:
-    # Parser and splitter are the real, in-process adapters: deterministic, no I/O.
-    return IngestionService(
-        repository,
-        DocumentParserAdapter(),
-        RecursiveTextSplitter(chunk_size=500, chunk_overlap=50),
-        embeddings or FakeEmbeddings(8),
-        max_upload_bytes=max_upload_bytes,
-    )
+    return make_ingestion(repository, embeddings or FakeEmbeddings(8), max_upload_bytes)
 
 
 async def _upload_and_index(service: IngestionService, filename: str) -> Document:

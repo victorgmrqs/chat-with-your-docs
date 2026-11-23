@@ -29,7 +29,7 @@ export function extensionOf(filename: string): string {
 }
 
 export function domainError(code: string, detail: string): DomainErrorResponse {
-  return { code, detail }
+  return { code, detail, request_id: crypto.randomUUID() }
 }
 
 export function documentResponse(overrides: Partial<DocumentResponse> = {}): DocumentResponse {

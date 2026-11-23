@@ -7,6 +7,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
+from app.application import telemetry as t
 from app.application.ports import (
     DocumentParser,
     DocumentRepository,
@@ -98,27 +99,62 @@ class IngestionService:
         return UploadResult(document, needs_indexing=False)
 
     async def index(self, document: Document, content: bytes) -> None:
-        """Background job: parse, split, embed and store. Always ends Ready or Failed (DOM-02)."""
+        """Background job: parse, split, embed and store. Always ends Ready or Failed (DOM-02).
+
+        One trace per run (`ingest.document`), found by `app.document.id` (DOM-23).
+        """
+        with t.step(
+            t.INGEST,
+            {
+                t.DOCUMENT_ID: str(document.id),
+                t.DOCUMENT_FORMAT: document.format.value,
+                t.DOCUMENT_BYTES: len(content),
+            },
+        ) as span:
+            reason = await self._index(document, content)
+            if reason is None:
+                span.set_attribute(t.DOCUMENT_STATUS, DocumentStatus.READY.value)
+                return
+            span.set_attributes(
+                {
+                    t.DOCUMENT_STATUS: DocumentStatus.FAILED.value,
+                    t.DOCUMENT_FAILURE_REASON: reason.value,
+                }
+            )
+            try:
+                await self._repository.mark_failed(document.id, reason)
+            except Exception as exc:
+                # Database gone mid-job: the document stays `indexing` until startup recovery.
+                _log_failure("Could not record the failure of document %s: %s", document, exc)
+                t.mark_failed(span, exc)
+
+    async def _index(self, document: Document, content: bytes) -> FailureReason | None:
+        """None when the document is Ready; otherwise why it failed (DOM-03)."""
         try:
-            sections = await self._parser.parse(content, document.format)
-            # CPU-bound on large files: keep the event loop free for polling and health checks.
-            pieces = await asyncio.to_thread(self._splitter.split, sections)
-            chunks = build_chunks(document, pieces)
-            embeddings = await self._embeddings.embed_documents([c.embedding_text for c in chunks])
-            await self._repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
-            return
+            with t.step(t.INGEST_PARSE) as span:
+                sections = await self._parser.parse(content, document.format)
+                span.set_attribute(t.DOCUMENT_SECTIONS, len(sections))
+            with t.step(t.INGEST_CHUNK) as span:
+                # CPU-bound on large files: keep the event loop free for polling and health checks.
+                pieces = await asyncio.to_thread(self._splitter.split, sections)
+                chunks = build_chunks(document, pieces)
+                span.set_attribute(t.DOCUMENT_CHUNKS, len(chunks))
+            with t.step(t.INGEST_EMBED, {t.EMBEDDED_TEXTS: len(chunks)}):
+                embeddings = await self._embeddings.embed_documents(
+                    [c.embedding_text for c in chunks]
+                )
+            with t.step(t.INGEST_STORE, {t.DOCUMENT_CHUNKS: len(chunks)}):
+                await self._repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
+            return None
         except NoExtractableText:
-            reason = FailureReason.NO_EXTRACTABLE_TEXT
+            # A permanent property of the file, not a system failure: the parse span shows it.
+            return FailureReason.NO_EXTRACTABLE_TEXT
         except Exception as exc:
             # DOM-03: anything else (provider or storage) is transient. Log the type only:
             # driver errors can carry statement parameters, i.e. chunk text.
             _log_failure("Indexing failed for document %s: %s", document, exc)
-            reason = FailureReason.INDEXING_FAILED
-        try:
-            await self._repository.mark_failed(document.id, reason)
-        except Exception as exc:
-            # Database gone mid-job: the document stays `indexing` until startup recovery.
-            _log_failure("Could not record the failure of document %s: %s", document, exc)
+            t.mark_failed(t.current_span(), exc)  # the root: no step is open here
+            return FailureReason.INDEXING_FAILED
 
     async def get(self, owner_id: uuid.UUID, document_id: uuid.UUID) -> Document:
         document = await self._repository.get(owner_id, document_id)

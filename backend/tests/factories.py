@@ -11,9 +11,20 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.community.postgres import PostgresContainer
 
+from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
+from app.application.answering import AnsweringLimits, AnswerQuestion
+from app.application.ingestion import IngestionService
+from app.application.ports import (
+    ChatModelPort,
+    DocumentRepository,
+    EmbeddingPort,
+    RetrieverPort,
+)
+from app.application.reranking import LLMReranker
 from app.config import Settings
 from app.domain.answers import RetrievedChunk
 from app.domain.documents import Document, DocumentFormat, DocumentStatus
+from app.domain.usage import PriceTable
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = BACKEND_DIR / "tests" / "fixtures" / "documents"
@@ -106,3 +117,51 @@ async def stored_chunks(engine: AsyncEngine, document_id: uuid.UUID) -> list[Sto
     async with engine.connect() as connection:
         result = await connection.execute(query, {"id": document_id})
         return [StoredChunk(*row) for row in result]
+
+
+ANSWERING_LIMITS = AnsweringLimits(
+    question_max_chars=200,
+    retrieval_candidates=20,
+    retrieval_top_k=6,
+    min_relevance=0.3,
+    rerank_top_n=1,
+    context_token_budget=3000,
+)
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+
+def make_answering(
+    retriever: RetrieverPort,
+    embeddings: EmbeddingPort,
+    chat: ChatModelPort,
+    *,
+    rerank: bool = False,
+    prices: PriceTable | None = None,
+    capture_content: bool = False,
+) -> AnswerQuestion:
+    """AnswerQuestion over the given fakes; the reranker, when on, uses the same chat model."""
+    return AnswerQuestion(
+        retriever,
+        embeddings,
+        chat,
+        ANSWERING_LIMITS,
+        reranker=LLMReranker(chat) if rerank else None,
+        prices=prices,
+        capture_content=capture_content,
+    )
+
+
+def make_ingestion(
+    repository: DocumentRepository,
+    embeddings: EmbeddingPort,
+    max_upload_bytes: int = MAX_UPLOAD_BYTES,
+) -> IngestionService:
+    """Parser and splitter are the real, in-process adapters: deterministic, no I/O."""
+    return IngestionService(
+        repository,
+        DocumentParserAdapter(),
+        RecursiveTextSplitter(chunk_size=500, chunk_overlap=50),
+        embeddings,
+        max_upload_bytes=max_upload_bytes,
+    )

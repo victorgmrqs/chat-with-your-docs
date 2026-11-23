@@ -12,7 +12,7 @@ import pytest_asyncio
 from pydantic import BaseModel
 from testcontainers.community.postgres import PostgresContainer
 
-from app.application.ports import ChatPrompt
+from app.application.ports import ChatPrompt, Generation
 from app.application.prompts import AnswerDraft
 from app.domain.answers import ChatModelUnavailable
 from eval.dataset import EvalConfig, EvalPlan, load_dataset
@@ -34,7 +34,7 @@ class OracleChat:
     provider = "fake"
     model = "fake-chat-model"
 
-    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> T:
+    async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> Generation[T]:
         question = next(q for q in DATASET.questions if q.question in prompt.user)
         if question.id == FAILING_QUESTION:
             raise ChatModelUnavailable
@@ -51,7 +51,7 @@ class OracleChat:
             answer = " ".join(f"Claim [{label}]." for label in dict.fromkeys(labels))
             draft = AnswerDraft(outcome="answered", answer=answer, closest_source_id=None)
         assert isinstance(draft, schema)
-        return draft
+        return Generation(draft)
 
 
 @pytest_asyncio.fixture(scope="module")
@@ -62,9 +62,7 @@ async def result(postgres: PostgresContainer) -> RunResult:
         settings, KeywordEmbeddings(EMBEDDING_DIMENSIONS), OracleChat()
     )
     try:
-        return await evaluate(
-            container, recorder, DATASET, PLAN, PLAN.configurations[0], FIXTURES_DIR
-        )
+        return await evaluate(container, recorder, DATASET, PLAN.configurations[0], FIXTURES_DIR)
     finally:
         await container.engine.dispose()
 

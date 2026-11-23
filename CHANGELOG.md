@@ -47,6 +47,14 @@ All notable changes to this project are documented here. The format follows
   identified by digest, only when every check and scan passed. Both images now pass that scan:
   the backend drops the unused system pip and the frontend moves to mainline nginx 1.31
   ([CWYD-6](https://goncalvesmarques.atlassian.net/browse/CWYD-6)).
+- OpenTelemetry traces for chat and ingestion: one trace per question (`rag.chat`) and per
+  indexing run (`ingest.document`) with a span per step, token usage per model and an estimated
+  cost from a price table shared with the RAG evaluation, and no question, prompt, chunk or
+  answer text unless `CAPTURE_CONTENT=true`. Exporter by `OTEL_TRACES_EXPORTER`
+  (`none` by default, `console`, `otlp`); Jaeger runs under the Compose `observability` profile.
+  Every response carries `X-Request-ID`, error bodies carry the same `request_id`, and an
+  unexpected failure answers `500 internal_error`
+  ([CWYD-12](https://goncalvesmarques.atlassian.net/browse/CWYD-12)).
 
 ### Maintenance
 

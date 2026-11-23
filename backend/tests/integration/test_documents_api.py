@@ -190,5 +190,7 @@ def test_documents_api_database_unavailable(unreachable_settings: Settings) -> N
         uploaded = _upload(client, "office-handbook.txt")
 
     assert listed.status_code == 503
-    assert listed.json() == {"code": "database_unavailable", "detail": "database unavailable"}
+    body = listed.json()
+    assert (body["code"], body["detail"]) == ("database_unavailable", "database unavailable")
+    assert body["request_id"] == listed.headers["X-Request-ID"]  # DOM-23
     assert uploaded.status_code == 503

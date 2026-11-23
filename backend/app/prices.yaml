@@ -1,0 +1,9 @@
+# Chat model prices in USD per million tokens (DOM-24), read by the API (estimated cost on each
+# question's trace) and by the RAG evaluation. Matched by prefix of the model name the provider
+# reports (providers add date suffixes); the longest matching prefix wins.
+# Snapshot 2026-11-22 (Anthropic API pricing); update when models or prices change.
+# A model missing here records no cost, never a wrong number.
+# Embedding calls are not priced: one short query embedding per question is negligible next to
+# the chat call, and document indexing is a one-off.
+prices_usd_per_million_tokens:
+  claude-haiku-5-5: {input: 0.10, output: 0.50}

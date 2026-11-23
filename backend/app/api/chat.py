@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 from app.api.dependencies import get_container
 from app.api.errors import DATABASE_UNAVAILABLE, error_response
+from app.api.request_id import request_id_of
 from app.composition import Container
 from app.domain.answers import Answer, Passage, Source
 
@@ -96,7 +97,10 @@ class ChatResponse(BaseModel):
 async def ask(
     request: ChatRequest,
     container: Annotated[Container, Depends(get_container)],
+    request_id: Annotated[uuid.UUID, Depends(request_id_of)],
 ) -> ChatResponse:
     """Answer from the owner's Ready documents with citations, or Not enough evidence."""
-    answer = await container.answering.answer(container.settings.default_owner_id, request.question)
+    answer = await container.answering.answer(
+        container.settings.default_owner_id, request.question, request_id
+    )
     return ChatResponse.from_domain(answer)

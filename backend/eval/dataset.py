@@ -68,11 +68,6 @@ class Dataset(_Strict):
         return self
 
 
-class ModelPrice(_Strict):
-    input: float = Field(ge=0)  # USD per million tokens
-    output: float = Field(ge=0)
-
-
 class EvalConfig(_Strict):
     name: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")  # also the report file name
     description: str
@@ -80,13 +75,7 @@ class EvalConfig(_Strict):
 
 
 class EvalPlan(_Strict):
-    prices_usd_per_million_tokens: dict[str, ModelPrice] = {}
-    configurations: list[EvalConfig]
-
-    def price_for(self, model_name: str) -> ModelPrice | None:
-        """Longest configured name that prefixes the reported model (providers add suffixes)."""
-        names = [name for name in self.prices_usd_per_million_tokens if model_name.startswith(name)]
-        return self.prices_usd_per_million_tokens[max(names, key=len)] if names else None
+    configurations: list[EvalConfig]  # prices: app/prices.yaml, shared with the API (DOM-24)
 
 
 def load_dataset(path: Path) -> Dataset:

@@ -191,6 +191,11 @@ export interface components {
             code: string;
             /** Detail */
             detail: string;
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
         };
         /** ErrorResponse */
         ErrorResponse: {

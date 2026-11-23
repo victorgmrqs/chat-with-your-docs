@@ -6,9 +6,8 @@ from collections.abc import Sequence
 
 import pytest
 
-from app.application.answering import AnsweringLimits, AnswerQuestion
+from app.application.answering import AnswerQuestion
 from app.application.prompts import AnswerDraft, RerankDraft
-from app.application.reranking import LLMReranker
 from app.domain.answers import (
     INSUFFICIENT_EVIDENCE_MESSAGE,
     ChatModelTimeout,
@@ -20,7 +19,7 @@ from app.domain.answers import (
     RetrievalUnavailable,
     RetrievedChunk,
 )
-from tests.factories import make_retrieved_chunk
+from tests.factories import ANSWERING_LIMITS, make_answering, make_retrieved_chunk
 from tests.fakes import FailingEmbeddings, FakeChatModel, FakeEmbeddings, FakeRetriever, Reply
 
 OWNER = uuid.uuid4()
@@ -44,14 +43,7 @@ FULL_TIME_ONLY = make_retrieved_chunk(
     text="Parental leave applies only to full-time employees with at least six months of service.",
 )
 
-LIMITS = AnsweringLimits(
-    question_max_chars=200,
-    retrieval_candidates=20,
-    retrieval_top_k=6,
-    min_relevance=0.3,
-    rerank_top_n=1,
-    context_token_budget=3000,
-)
+LIMITS = ANSWERING_LIMITS
 
 
 def _use_case(
@@ -61,12 +53,8 @@ def _use_case(
     has_ready: bool = True,
 ) -> tuple[AnswerQuestion, FakeChatModel]:
     chat = FakeChatModel(*replies)
-    use_case = AnswerQuestion(
-        FakeRetriever(chunks, has_ready=has_ready),
-        FakeEmbeddings(8),
-        chat,
-        LIMITS,
-        reranker=LLMReranker(chat) if rerank else None,
+    use_case = make_answering(
+        FakeRetriever(chunks, has_ready=has_ready), FakeEmbeddings(8), chat, rerank=rerank
     )
     return use_case, chat
 

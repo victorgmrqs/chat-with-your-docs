@@ -5,8 +5,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.adapters.telemetry import configure_tracing
 from app.api import chat, documents, health
 from app.api.errors import register_error_handlers
+from app.api.request_id import add_request_id
 from app.application.ports import ChatModelPort, EmbeddingPort
 from app.composition import Container, build_container
 from app.config import Settings, load_settings
@@ -41,13 +43,20 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        container = build_container(settings or load_settings(), embeddings, chat_model)
+        loaded = settings or load_settings()
+        tracer_provider = configure_tracing(loaded)  # None with OTEL_TRACES_EXPORTER=none
+        container = build_container(loaded, embeddings, chat_model)
         app.state.container = container
         await _recover_interrupted_indexing(container)
         yield
         await container.engine.dispose()
+        if tracer_provider is not None:
+            # Flushes the spans still batched; blocking (up to the export timeout when the
+            # collector is gone), so off the event loop.
+            await asyncio.to_thread(tracer_provider.shutdown)
 
     app = FastAPI(title="Chat With Your Docs API", lifespan=lifespan)
+    app.middleware("http")(add_request_id)
     register_error_handlers(app)
     app.include_router(health.router)
     app.include_router(documents.router)
