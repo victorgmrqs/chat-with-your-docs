@@ -62,3 +62,7 @@ All notable changes to this project are documented here. The format follows
 - AI-assisted development foundation: workflow configuration, path-scoped rules, 10 curated and
   security-reviewed skills plus 1 original, read-only Postgres and Context7 MCP servers, and protected
   `main`/`development` branches ([CWYD-9](https://goncalvesmarques.atlassian.net/browse/CWYD-9)).
+- Autonomous sprint loop (`/loop /sprint`, dev-workflow 0.8.0) for cards labelled `auto-ok`: every
+  merge to `development` needs the `ci-gate` check and an approval from a second reviewer from
+  another vendor (agy, blocking); `scripts/loop/` holds the launcher and the loop's permission denies
+  ([CWYD-25](https://goncalvesmarques.atlassian.net/browse/CWYD-25)).
