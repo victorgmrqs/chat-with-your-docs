@@ -1,25 +1,7 @@
 import pytest
 
 from app.config import ConfigurationError, load_settings
-from tests.factories import VALID_SETTINGS
-
-REQUIRED_ENV = {name.upper(): value for name, value in VALID_SETTINGS.items()}
-
-
-@pytest.fixture
-def env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    """Start every test from a clean environment, whatever the shell exports."""
-    for name in (*REQUIRED_ENV, "ANTHROPIC_API_KEY"):
-        monkeypatch.delenv(name, raising=False)
-    return monkeypatch
-
-
-@pytest.fixture
-def valid_env(env: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
-    """Every required variable set; tests override or remove only the one they are about."""
-    for name, value in REQUIRED_ENV.items():
-        env.setenv(name, value)
-    return env
+from tests.factories import REQUIRED_ENV
 
 
 @pytest.mark.usefixtures("valid_env")

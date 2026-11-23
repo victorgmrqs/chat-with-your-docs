@@ -7,23 +7,19 @@ those passages from the real database, and citations resolve to the right file a
 """
 
 import json
-import uuid
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
-from testcontainers.community.postgres import PostgresContainer
 
 from app.application import telemetry as t
-from app.application.ports import ChatModelPort, ChatPrompt
+from app.application.ports import ChatPrompt
 from app.application.prompts import AnswerDraft
 from app.domain.answers import INSUFFICIENT_EVIDENCE_MESSAGE, ChatModelTimeout, ChatModelUnavailable
-from app.main import create_app
-from tests.factories import BACKEND_DIR, EMBEDDING_DIMENSIONS, fixture_bytes, make_settings
-from tests.fakes import FakeChatModel, KeywordEmbeddings, Reply, prompt_sources
+from tests.factories import BACKEND_DIR, ClientFactory
+from tests.fakes import prompt_sources
 
 pytestmark = pytest.mark.integration
 
@@ -31,9 +27,6 @@ CASES = {
     case["id"]: case
     for case in json.loads((BACKEND_DIR / "tests/fixtures/rag_cases.json").read_text())["cases"]
 }
-DOCUMENTS = ("remote-work-policy.pdf", "expense-policy.pdf", "parental-leave-policy.md")
-
-ClientFactory = Callable[..., TestClient]
 
 
 def _oracle(case: dict[str, Any]) -> Callable[[ChatPrompt], AnswerDraft]:
@@ -55,41 +48,13 @@ def _oracle(case: dict[str, Any]) -> Callable[[ChatPrompt], AnswerDraft]:
     return reply
 
 
-@pytest.fixture
-def client_for(postgres: PostgresContainer) -> Iterator[ClientFactory]:
-    """One owner per test (isolation by owner_id); documents uploaded on demand."""
-    owner_id = uuid.uuid4()
-    clients: list[TestClient] = []
-
-    def build(
-        *replies: Reply, upload: bool = True, chat: ChatModelPort | None = None, **overrides: Any
-    ) -> TestClient:
-        settings = make_settings(
-            postgres.get_connection_url(), default_owner_id=owner_id, **overrides
-        )
-        app = create_app(
-            settings, KeywordEmbeddings(EMBEDDING_DIMENSIONS), chat or FakeChatModel(*replies)
-        )
-        client = TestClient(app).__enter__()
-        clients.append(client)
-        if upload:
-            for name in DOCUMENTS:  # TestClient runs the indexing background task inline
-                response = client.post("/documents", files={"file": (name, fixture_bytes(name))})
-                assert response.status_code in (200, 202)
-        return client
-
-    yield build
-    for client in clients:
-        client.__exit__(None, None, None)
-
-
 def _cited(body: dict[str, Any]) -> list[tuple[str, int | None]]:
     return [(s["filename"], s["page"]) for s in body["sources"]]
 
 
-def test_chat_coworking_two_sources(client_for: ClientFactory) -> None:
+def test_chat_coworking_two_sources(chat_client_for: ClientFactory) -> None:
     case = CASES["coworking_two_sources"]
-    client = client_for(_oracle(case))
+    client = chat_client_for(_oracle(case))
 
     response = client.post("/chat", json={"question": case["question"]})
 
@@ -104,10 +69,10 @@ def test_chat_coworking_two_sources(client_for: ClientFactory) -> None:
     assert (body["provider"], body["model"]) == ("fake", "fake-chat-model")
 
 
-def test_chat_contractor_parental_leave_answered(client_for: ClientFactory) -> None:
+def test_chat_contractor_parental_leave_answered(chat_client_for: ClientFactory) -> None:
     # The fixture states the exclusion, so "contractors are not covered" is a grounded answer.
     case = CASES["contractor_parental_leave"]
-    client = client_for(_oracle(case))
+    client = chat_client_for(_oracle(case))
 
     body = client.post("/chat", json={"question": case["question"]}).json()
 
@@ -119,9 +84,9 @@ def test_chat_contractor_parental_leave_answered(client_for: ClientFactory) -> N
     assert expected["passage_contains"] in source["passage"]
 
 
-def test_chat_uncovered_question_insufficient(client_for: ClientFactory) -> None:
+def test_chat_uncovered_question_insufficient(chat_client_for: ClientFactory) -> None:
     case = CASES["leave_split_not_covered"]
-    client = client_for(_oracle(case))
+    client = chat_client_for(_oracle(case))
 
     body = client.post("/chat", json={"question": case["question"]}).json()
 
@@ -134,9 +99,9 @@ def test_chat_uncovered_question_insufficient(client_for: ClientFactory) -> None
     assert expected["passage_contains"] in body["related_passage"]["passage"]
 
 
-def test_chat_exact_term_amount(client_for: ClientFactory) -> None:
+def test_chat_exact_term_amount(chat_client_for: ClientFactory) -> None:
     case = CASES["exact_term_amount"]
-    client = client_for(_oracle(case))
+    client = chat_client_for(_oracle(case))
 
     body = client.post("/chat", json={"question": case["question"]}).json()
 
@@ -144,9 +109,9 @@ def test_chat_exact_term_amount(client_for: ClientFactory) -> None:
     assert _cited(body) == [("expense-policy.pdf", 2)]
 
 
-def test_chat_invented_citation_is_not_a_source(client_for: ClientFactory) -> None:
+def test_chat_invented_citation_is_not_a_source(chat_client_for: ClientFactory) -> None:
     invented = AnswerDraft(outcome="answered", answer="Two weeks [S99].", closest_source_id=None)
-    client = client_for(invented)
+    client = chat_client_for(invented)
 
     response = client.post(
         "/chat", json={"question": CASES["contractor_parental_leave"]["question"]}
@@ -158,8 +123,8 @@ def test_chat_invented_citation_is_not_a_source(client_for: ClientFactory) -> No
     assert response.json()["sources"] == []
 
 
-def test_chat_provider_timeout_is_technical_failure(client_for: ClientFactory) -> None:
-    client = client_for(ChatModelTimeout())
+def test_chat_provider_timeout_is_technical_failure(chat_client_for: ClientFactory) -> None:
+    client = chat_client_for(ChatModelTimeout())
 
     response = client.post("/chat", json={"question": "What is the coworking limit?"})
 
@@ -168,9 +133,9 @@ def test_chat_provider_timeout_is_technical_failure(client_for: ClientFactory) -
 
 
 def test_chat_provider_error_is_technical_failure(
-    client_for: ClientFactory, spans: InMemorySpanExporter
+    chat_client_for: ClientFactory, spans: InMemorySpanExporter
 ) -> None:
-    client = client_for(ChatModelUnavailable())
+    client = chat_client_for(ChatModelUnavailable())
 
     response = client.post("/chat", json={"question": "What is the coworking limit?"})
 
@@ -191,16 +156,16 @@ def test_chat_provider_error_is_technical_failure(
     assert (http.attributes or {})["http.response.status_code"] == 502
 
 
-def test_chat_empty_question(client_for: ClientFactory) -> None:
-    response = client_for(upload=False).post("/chat", json={"question": "  "})
+def test_chat_empty_question(chat_client_for: ClientFactory) -> None:
+    response = chat_client_for(upload=False).post("/chat", json={"question": "  "})
 
     assert response.status_code == 400
     assert response.json()["code"] == "empty_question"
 
 
-def test_chat_control_characters_are_removed(client_for: ClientFactory) -> None:
+def test_chat_control_characters_are_removed(chat_client_for: ClientFactory) -> None:
     case = CASES["exact_term_amount"]
-    client = client_for(_oracle(case))
+    client = chat_client_for(_oracle(case))
 
     response = client.post("/chat", json={"question": "Which policy mentions\u0000 US$ 250?"})
 
@@ -208,8 +173,8 @@ def test_chat_control_characters_are_removed(client_for: ClientFactory) -> None:
     assert response.json()["outcome"] == "answered"
 
 
-def test_chat_question_too_long(client_for: ClientFactory) -> None:
-    client = client_for(upload=False, question_max_chars=10)
+def test_chat_question_too_long(chat_client_for: ClientFactory) -> None:
+    client = chat_client_for(upload=False, question_max_chars=10)
 
     response = client.post("/chat", json={"question": "x" * 11})
 
@@ -217,8 +182,8 @@ def test_chat_question_too_long(client_for: ClientFactory) -> None:
     assert response.json()["code"] == "question_too_long"
 
 
-def test_chat_no_ready_documents(client_for: ClientFactory) -> None:
-    response = client_for(upload=False).post("/chat", json={"question": "Anything?"})
+def test_chat_no_ready_documents(chat_client_for: ClientFactory) -> None:
+    response = chat_client_for(upload=False).post("/chat", json={"question": "Anything?"})
 
     assert response.status_code == 409
     assert response.json()["code"] == "no_ready_documents"

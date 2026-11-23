@@ -79,3 +79,7 @@ All notable changes to this project are documented here. The format follows
   and a read-only `differential-review` (git history, blast radius), both pinned and security-reviewed
   copies, plus path-scoped rules for nginx headers and limits, upload validation and LLM/RAG code
   ([CWYD-17](https://goncalvesmarques.atlassian.net/browse/CWYD-17)).
+- Readiness check failure paths are tested against real PostgreSQL (timeout, dropped connection,
+  SQL errors propagating), every pytest fixture lives in `tests/conftest.py`, and `.env.example`
+  separates the Compose `POSTGRES_*` block from the outside-Compose `DATABASE_URL`
+  ([CWYD-13](https://goncalvesmarques.atlassian.net/browse/CWYD-13)).

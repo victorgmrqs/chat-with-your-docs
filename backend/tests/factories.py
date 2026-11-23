@@ -1,12 +1,14 @@
 """Builders shared by tests. Importable module (tests never import from conftest)."""
 
 import uuid
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, NamedTuple
 
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.community.postgres import PostgresContainer
@@ -28,6 +30,8 @@ from app.domain.usage import PriceTable
 
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 FIXTURES_DIR = BACKEND_DIR / "tests" / "fixtures" / "documents"
+# application_name of the `isolated_engine` fixture, so a test can find its backend.
+ISOLATED_APPLICATION_NAME = "cwyd-isolated-test"
 
 # Size of the vector(N) column in migration 0001; fakes must produce vectors of this size.
 EMBEDDING_DIMENSIONS: int = Settings.model_fields["embedding_dimensions"].default
@@ -39,6 +43,15 @@ VALID_SETTINGS: dict[str, str] = {
     "embedding_model": "embedding-model-x",
     "openai_api_key": "sk-test",
 }
+
+# The same settings as environment variables, as load_settings() reads them.
+REQUIRED_ENV: dict[str, str] = {name.upper(): value for name, value in VALID_SETTINGS.items()}
+
+# Builds a TestClient for one test's owner (`documents_client_for`, `chat_client_for`).
+ClientFactory = Callable[..., TestClient]
+
+# Fixture documents the chat tests upload before asking.
+CHAT_DOCUMENTS = ("remote-work-policy.pdf", "expense-policy.pdf", "parental-leave-policy.md")
 
 
 def make_settings(database_url: str, **overrides: Any) -> Settings:

@@ -2,7 +2,6 @@
 
 import asyncio
 import uuid
-from collections.abc import Callable, Iterator
 from typing import Any
 
 import pytest
@@ -12,42 +11,18 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from testcontainers.community.postgres import PostgresContainer
 
 from app.application import telemetry as t
-from app.application.ports import EmbeddingPort
 from app.config import Settings
 from app.main import create_app
 from tests.factories import (
     EMBEDDING_DIMENSIONS,
+    ClientFactory,
     StoredChunk,
     fixture_bytes,
-    make_settings,
     stored_chunks,
 )
 from tests.fakes import FailingEmbeddings, FakeEmbeddings
 
 pytestmark = pytest.mark.integration
-
-ClientFactory = Callable[..., TestClient]
-
-
-@pytest.fixture
-def client_for(postgres: PostgresContainer) -> Iterator[ClientFactory]:
-    """Clients sharing one owner per test (isolation by owner_id, DOM-06)."""
-    owner_id = uuid.uuid4()
-    clients: list[TestClient] = []
-
-    def build(embeddings: EmbeddingPort | None = None, **overrides: Any) -> TestClient:
-        settings = make_settings(
-            postgres.get_connection_url(), default_owner_id=owner_id, **overrides
-        )
-        client = TestClient(
-            create_app(settings, embeddings or FakeEmbeddings(EMBEDDING_DIMENSIONS))
-        )
-        clients.append(client.__enter__())
-        return client
-
-    yield build
-    for client in clients:
-        client.__exit__(None, None, None)
 
 
 def _upload(client: TestClient, filename: str, content: bytes | None = None) -> Any:
@@ -72,8 +47,10 @@ def _stored_chunks(postgres: PostgresContainer, document_id: str) -> list[str]:
     ]
 
 
-def test_document_ingestion_success(client_for: ClientFactory, postgres: PostgresContainer) -> None:
-    client = client_for()
+def test_document_ingestion_success(
+    documents_client_for: ClientFactory, postgres: PostgresContainer
+) -> None:
+    client = documents_client_for()
 
     accepted = [_upload(client, name) for name in ("remote-work-policy.pdf", "expense-policy.pdf")]
     # TestClient runs background tasks before returning: indexing is already finished.
@@ -93,9 +70,9 @@ def test_document_ingestion_success(client_for: ClientFactory, postgres: Postgre
 
 
 def test_document_ingestion_markdown_and_text(
-    client_for: ClientFactory, postgres: PostgresContainer
+    documents_client_for: ClientFactory, postgres: PostgresContainer
 ) -> None:
-    client = client_for()
+    client = documents_client_for()
 
     markdown = _upload(client, "parental-leave-policy.md").json()
     text = _upload(client, "office-handbook.txt").json()
@@ -107,33 +84,33 @@ def test_document_ingestion_markdown_and_text(
     assert _stored_chunks(postgres, text["id"]) == ["office-handbook.txt|||text"]
 
 
-def test_document_ingestion_unsupported_type(client_for: ClientFactory) -> None:
-    response = _upload(client_for(), "unsupported.docx")
+def test_document_ingestion_unsupported_type(documents_client_for: ClientFactory) -> None:
+    response = _upload(documents_client_for(), "unsupported.docx")
 
     assert response.status_code == 415
     assert response.json()["code"] == "unsupported_type"
     assert ".pdf" in response.json()["detail"]
 
 
-def test_document_ingestion_empty_file(client_for: ClientFactory) -> None:
-    response = _upload(client_for(), "empty.txt", b"")
+def test_document_ingestion_empty_file(documents_client_for: ClientFactory) -> None:
+    response = _upload(documents_client_for(), "empty.txt", b"")
 
     assert response.status_code == 400
     assert response.json()["code"] == "empty_file"
 
 
-def test_document_ingestion_file_too_large(client_for: ClientFactory) -> None:
-    response = _upload(client_for(max_upload_mb=1), "big.txt", b"a" * (1024 * 1024 + 1))
+def test_document_ingestion_file_too_large(documents_client_for: ClientFactory) -> None:
+    response = _upload(documents_client_for(max_upload_mb=1), "big.txt", b"a" * (1024 * 1024 + 1))
 
     assert response.status_code == 413
     assert response.json()["code"] == "file_too_large"
 
 
 def test_document_ingestion_traced_inside_the_upload_request(
-    client_for: ClientFactory, spans: InMemorySpanExporter
+    documents_client_for: ClientFactory, spans: InMemorySpanExporter
 ) -> None:
     # CWYD-12: the background job runs after the 202, inside the upload's trace.
-    client = client_for()
+    client = documents_client_for()
 
     accepted = _upload(client, "office-handbook.txt")
 
@@ -148,8 +125,8 @@ def test_document_ingestion_traced_inside_the_upload_request(
     assert attributes[t.DOCUMENT_STATUS] == "ready"
 
 
-def test_document_ingestion_no_extractable_text(client_for: ClientFactory) -> None:
-    client = client_for()
+def test_document_ingestion_no_extractable_text(documents_client_for: ClientFactory) -> None:
+    client = documents_client_for()
 
     accepted = _upload(client, "scanned-notice.pdf")
     document = client.get(f"/documents/{accepted.json()['id']}").json()
@@ -159,8 +136,8 @@ def test_document_ingestion_no_extractable_text(client_for: ClientFactory) -> No
     assert "selectable text" in document["failure_message"]
 
 
-def test_document_ingestion_indexing_failure(client_for: ClientFactory) -> None:
-    client = client_for(FailingEmbeddings())
+def test_document_ingestion_indexing_failure(documents_client_for: ClientFactory) -> None:
+    client = documents_client_for(FailingEmbeddings())
 
     accepted = _upload(client, "expense-policy.pdf")
     document = client.get(f"/documents/{accepted.json()['id']}").json()
@@ -170,8 +147,8 @@ def test_document_ingestion_indexing_failure(client_for: ClientFactory) -> None:
     assert "Upload the same file again" in document["failure_message"]
 
 
-def test_document_ingestion_duplicate_upload(client_for: ClientFactory) -> None:
-    client = client_for()
+def test_document_ingestion_duplicate_upload(documents_client_for: ClientFactory) -> None:
+    client = documents_client_for()
     first = _upload(client, "remote-work-policy.pdf")
 
     second = _upload(client, "remote-work-policy-copy.pdf", fixture_bytes("remote-work-policy.pdf"))
@@ -183,10 +160,10 @@ def test_document_ingestion_duplicate_upload(client_for: ClientFactory) -> None:
 
 
 def test_document_ingestion_retry_after_indexing_failure(
-    client_for: ClientFactory,
+    documents_client_for: ClientFactory,
 ) -> None:
-    failed = _upload(client_for(FailingEmbeddings()), "expense-policy.pdf").json()
-    client = client_for()
+    failed = _upload(documents_client_for(FailingEmbeddings()), "expense-policy.pdf").json()
+    client = documents_client_for()
 
     retried = _upload(client, "expense-policy.pdf")
     document = client.get(f"/documents/{failed['id']}").json()
@@ -196,8 +173,8 @@ def test_document_ingestion_retry_after_indexing_failure(
     assert document["status"] == "ready"
 
 
-def test_document_ingestion_unknown_document(client_for: ClientFactory) -> None:
-    response = client_for().get(f"/documents/{uuid.uuid4()}")
+def test_document_ingestion_unknown_document(documents_client_for: ClientFactory) -> None:
+    response = documents_client_for().get(f"/documents/{uuid.uuid4()}")
 
     assert response.status_code == 404
     assert response.json()["code"] == "document_not_found"
