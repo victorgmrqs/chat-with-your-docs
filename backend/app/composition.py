@@ -71,12 +71,13 @@ def build_container(
     readiness = PostgresReadiness(engine)
     ingestion = IngestionService(
         PostgresDocumentRepository(engine),
-        DocumentParserAdapter(),
+        DocumentParserAdapter(max_pdf_pages=settings.pdf_max_pages),
         RecursiveTextSplitter(settings.chunk_size, settings.chunk_overlap),
         embeddings,
         readiness,  # VectorSchemaPort (DOM-26)
         max_upload_bytes=settings.max_upload_bytes,
         embedding_dimensions=settings.embedding_dimensions,
+        pdf_parse_timeout_seconds=settings.pdf_parse_timeout_seconds,
     )
     prices = load_price_table(settings.price_table_path)
     retriever: RetrieverPort = PostgresRetriever(engine)

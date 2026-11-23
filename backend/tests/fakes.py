@@ -1,5 +1,6 @@
 """Declared fakes implementing the application ports. No network calls in tests."""
 
+import asyncio
 import hashlib
 import math
 import re
@@ -19,7 +20,14 @@ from app.application.ports import (
     Generation,
 )
 from app.domain.answers import RetrievedChunk
-from app.domain.documents import Chunk, Document, DocumentStatus, FailureReason
+from app.domain.documents import (
+    Chunk,
+    Document,
+    DocumentFormat,
+    DocumentStatus,
+    FailureReason,
+    Section,
+)
 from app.domain.usage import TokenUsage
 
 
@@ -49,6 +57,21 @@ class MisconfiguredEmbeddings:
 
     async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
         raise EmbeddingMisconfigured("AuthenticationError")
+
+
+class StalledParser:
+    """A parse that never finishes on its own: only the DOM-28 timeout ends it (no real wait)."""
+
+    def __init__(self) -> None:
+        self.cancelled = False
+
+    async def parse(self, content: bytes, document_format: DocumentFormat) -> list[Section]:
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+        raise AssertionError("unreachable")
 
 
 class FixedVectorSchema:

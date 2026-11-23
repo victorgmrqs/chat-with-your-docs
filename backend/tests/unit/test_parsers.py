@@ -1,12 +1,12 @@
 import pytest
 
 from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
-from app.domain.documents import DocumentFormat, NoExtractableText, Section
-from tests.factories import fixture_bytes
+from app.domain.documents import DocumentFormat, NoExtractableText, Section, TooManyPages
+from tests.factories import blank_pdf, fixture_bytes
 
 
 async def test_parse_pdf_returns_one_section_per_page() -> None:
-    sections = await DocumentParserAdapter().parse(
+    sections = await DocumentParserAdapter(max_pdf_pages=500).parse(
         fixture_bytes("remote-work-policy.pdf"), DocumentFormat.PDF
     )
 
@@ -15,7 +15,7 @@ async def test_parse_pdf_returns_one_section_per_page() -> None:
 
 
 async def test_parse_markdown_returns_heading_paths() -> None:
-    sections = await DocumentParserAdapter().parse(
+    sections = await DocumentParserAdapter(max_pdf_pages=500).parse(
         fixture_bytes("parental-leave-policy.md"), DocumentFormat.MARKDOWN
     )
 
@@ -26,7 +26,7 @@ async def test_parse_markdown_returns_heading_paths() -> None:
 
 
 async def test_parse_text_returns_the_whole_file() -> None:
-    sections = await DocumentParserAdapter().parse(
+    sections = await DocumentParserAdapter(max_pdf_pages=500).parse(
         fixture_bytes("office-handbook.txt"), DocumentFormat.TEXT
     )
 
@@ -51,7 +51,7 @@ async def test_parse_without_extractable_text_raises(
     content: bytes, document_format: DocumentFormat
 ) -> None:
     with pytest.raises(NoExtractableText):
-        await DocumentParserAdapter().parse(content, document_format)
+        await DocumentParserAdapter(max_pdf_pages=500).parse(content, document_format)
 
 
 def test_splitter_keeps_page_and_heading_on_every_piece() -> None:
@@ -67,6 +67,23 @@ def test_splitter_keeps_page_and_heading_on_every_piece() -> None:
 
 
 async def test_parse_text_with_nul_bytes_strips_them() -> None:
-    sections = await DocumentParserAdapter().parse(b"Reception\x00 desk", DocumentFormat.TEXT)
+    sections = await DocumentParserAdapter(max_pdf_pages=500).parse(
+        b"Reception\x00 desk", DocumentFormat.TEXT
+    )
 
     assert sections == [Section(text="Reception desk")]
+
+
+async def test_parse_pdf_over_the_page_limit_raises_too_many_pages() -> None:
+    with pytest.raises(TooManyPages) as raised:
+        await DocumentParserAdapter(max_pdf_pages=3).parse(blank_pdf(4), DocumentFormat.PDF)
+
+    assert (raised.value.pages, raised.value.limit) == (4, 3)
+
+
+async def test_parse_pdf_at_the_page_limit_is_parsed() -> None:
+    sections = await DocumentParserAdapter(max_pdf_pages=2).parse(
+        fixture_bytes("expense-policy.pdf"), DocumentFormat.PDF
+    )
+
+    assert [s.page for s in sections] == [1, 2]

@@ -78,6 +78,12 @@ All notable changes to this project are documented here. The format follows
   requests over a limit get `429 rate_limited` with `Retry-After: 60`, shown in the app without
   Retry, and the limits are tunable with `RATE_LIMIT_*` in `.env`
   ([CWYD-18](https://goncalvesmarques.atlassian.net/browse/CWYD-18)).
+- Uploads whose content does not match the extension (a `.pdf` not starting with `%PDF-`, a
+  `.md` or `.txt` that is not valid UTF-8 or contains NUL bytes) are rejected with
+  `415 unsupported_type` before anything is stored, and PDF parsing has a budget: a PDF over
+  `PDF_MAX_PAGES` (default 500) or `PDF_PARSE_TIMEOUT_SECONDS` (default 60) ends `failed` with the
+  permanent reason `too_many_pages` or `parse_timeout`, each with a message saying what to upload
+  instead ([CWYD-19](https://goncalvesmarques.atlassian.net/browse/CWYD-19)).
 
 ### Maintenance
 

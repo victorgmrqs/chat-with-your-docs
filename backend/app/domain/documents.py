@@ -28,6 +28,8 @@ class FailureReason(StrEnum):
     NO_EXTRACTABLE_TEXT = "no_extractable_text"  # permanent: depends on the file
     INDEXING_FAILED = "indexing_failed"  # transient: a re-upload indexes again
     PROVIDER_MISCONFIGURED = "provider_misconfigured"  # DOM-25: fixed by the operator, retryable
+    TOO_MANY_PAGES = "too_many_pages"  # DOM-28: permanent, over PDF_MAX_PAGES
+    PARSE_TIMEOUT = "parse_timeout"  # DOM-28: permanent, over PDF_PARSE_TIMEOUT_SECONDS
 
 
 # DOM-04: failures that do not depend on the file; re-uploading the same file indexes it again.
@@ -47,6 +49,13 @@ FAILURE_MESSAGES: dict[FailureReason, str] = {  # DOM-03: distinct, actionable m
     FailureReason.PROVIDER_MISCONFIGURED: (  # DOM-25
         "The embeddings provider rejected the configured API key or model. Ask the operator "
         "to check OPENAI_API_KEY and EMBEDDING_MODEL, then upload the same file again."
+    ),
+    FailureReason.TOO_MANY_PAGES: (  # DOM-28
+        "The PDF has more pages than allowed. Split it into smaller files and upload those."
+    ),
+    FailureReason.PARSE_TIMEOUT: (  # DOM-28
+        "Reading the PDF took too long. Save it again as a simpler PDF (for example with "
+        "Print to PDF) or split it, then upload the new file."
     ),
 }
 
@@ -85,6 +94,23 @@ class DocumentNotFound(DomainError):
 
 class NoExtractableText(DomainError):
     code = FailureReason.NO_EXTRACTABLE_TEXT.value
+
+
+class TooManyPages(DomainError):
+    """DOM-28: the PDF has more pages than PDF_MAX_PAGES; raised before extracting text."""
+
+    code = FailureReason.TOO_MANY_PAGES.value
+
+    def __init__(self, pages: int, limit: int) -> None:
+        super().__init__(f"{pages} pages, limit {limit}")
+        self.pages = pages
+        self.limit = limit
+
+
+class ParseTimeout(DomainError):
+    """DOM-28: parsing the PDF took longer than PDF_PARSE_TIMEOUT_SECONDS."""
+
+    code = FailureReason.PARSE_TIMEOUT.value
 
 
 class EmbeddingDimensionMismatch(DomainError):
@@ -202,3 +228,28 @@ def detect_format(filename: str) -> DocumentFormat:
     except ValueError:
         shown = f".{suffix}" if suffix else "Files without an extension"
         raise UnsupportedFormat(f"{shown} is not supported. {ACCEPTED_FORMATS_HINT}") from None
+
+
+def check_content(document_format: DocumentFormat, content: bytes) -> None:
+    """DOM-01: the bytes must match the extension before anything is stored.
+
+    A `.pdf` starts with `%PDF-`; a `.md` or `.txt` is valid UTF-8 without NUL bytes.
+    Raises UnsupportedFormat otherwise.
+    """
+    if document_format is DocumentFormat.PDF:
+        matches = content.startswith(b"%PDF-")
+    else:
+        matches = b"\x00" not in content and _is_utf8(content)
+    if not matches:
+        raise UnsupportedFormat(
+            f"The file content does not match its .{document_format.value} extension. "
+            f"{ACCEPTED_FORMATS_HINT}"
+        )
+
+
+def _is_utf8(content: bytes) -> bool:
+    try:
+        content.decode("utf-8")  # strict; a BOM is valid UTF-8 and the parser drops it
+    except UnicodeDecodeError:
+        return False
+    return True

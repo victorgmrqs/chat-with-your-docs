@@ -14,6 +14,10 @@ export const MESSAGES = {
   indexingFailed: 'Indexing failed for a temporary reason. Upload the same file again to retry.',
   providerMisconfigured:
     'The embeddings provider rejected the configured API key or model. Ask the operator to check OPENAI_API_KEY and EMBEDDING_MODEL, then upload the same file again.',
+  tooManyPages:
+    'The PDF has more pages than allowed. Split it into smaller files and upload those.',
+  parseTimeout:
+    'Reading the PDF took too long. Save it again as a simpler PDF (for example with Print to PDF) or split it, then upload the new file.',
   unsupportedType: (extension: string) =>
     `${extension} is not supported. Upload a .pdf with selectable text, a .md or a .txt file.`,
   emptyFile: 'The file is empty. Upload a .pdf with selectable text, a .md or a .txt file.',

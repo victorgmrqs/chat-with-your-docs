@@ -226,7 +226,9 @@
         "enum": [
           "no_extractable_text",
           "indexing_failed",
-          "provider_misconfigured"
+          "provider_misconfigured",
+          "too_many_pages",
+          "parse_timeout"
         ],
         "title": "FailureReason",
         "type": "string"

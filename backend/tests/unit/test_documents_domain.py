@@ -9,6 +9,7 @@ from app.domain.documents import (
     Section,
     UnsupportedFormat,
     build_chunks,
+    check_content,
     chunk_id,
     clean_filename,
     detect_format,
@@ -112,3 +113,36 @@ def test_clean_filename_long_name_keeps_a_supported_extension() -> None:
 
     assert len(name) == 255
     assert detect_format(name) is DocumentFormat.PDF
+
+
+@pytest.mark.parametrize(
+    ("document_format", "content"),
+    [
+        (DocumentFormat.PDF, b"%PDF-1.7\n..."),
+        (DocumentFormat.TEXT, "Café opens at 8.".encode()),
+        (DocumentFormat.MARKDOWN, b"\xef\xbb\xbf# Title\n"),  # BOM: valid UTF-8
+    ],
+    ids=["pdf", "utf8-text", "markdown-with-bom"],
+)
+def test_check_content_accepts_matching_content(
+    document_format: DocumentFormat, content: bytes
+) -> None:
+    check_content(document_format, content)  # DOM-01: no exception
+
+
+@pytest.mark.parametrize(
+    ("document_format", "content"),
+    [
+        (DocumentFormat.PDF, b"\x89PNG\r\n\x1a\n renamed image"),
+        (DocumentFormat.PDF, b" %PDF-1.7"),  # must start with the header
+        (DocumentFormat.TEXT, b"caf\xe9 latin-1"),
+        (DocumentFormat.TEXT, b"MZ\x90\x00 executable"),
+        (DocumentFormat.MARKDOWN, b"# Title\x00"),
+    ],
+    ids=["renamed-image", "pdf-header-not-first", "invalid-utf8", "binary", "nul-byte"],
+)
+def test_check_content_rejects_content_that_does_not_match(
+    document_format: DocumentFormat, content: bytes
+) -> None:
+    with pytest.raises(UnsupportedFormat, match=rf"does not match its \.{document_format.value}"):
+        check_content(document_format, content)

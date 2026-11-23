@@ -1,5 +1,6 @@
 """Builders shared by tests. Importable module (tests never import from conftest)."""
 
+import io
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
@@ -9,6 +10,7 @@ from typing import Any, NamedTuple
 
 from alembic.config import Config
 from fastapi.testclient import TestClient
+from pypdf import PdfWriter
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from testcontainers.community.postgres import PostgresContainer
@@ -18,6 +20,7 @@ from app.application.answering import AnsweringLimits, AnswerQuestion
 from app.application.ingestion import IngestionService
 from app.application.ports import (
     ChatModelPort,
+    DocumentParser,
     DocumentRepository,
     EmbeddingPort,
     RetrieverPort,
@@ -93,6 +96,16 @@ def make_retrieved_chunk(**overrides: Any) -> RetrievedChunk:
         fts_matched=True,
     )
     return replace(chunk, **overrides)
+
+
+def blank_pdf(pages: int) -> bytes:
+    """A PDF with `pages` empty pages, generated in the test (no binary committed)."""
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=200, height=200)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
 
 
 def fixture_bytes(name: str) -> bytes:
@@ -172,6 +185,10 @@ def make_ingestion(
     embeddings: EmbeddingPort,
     max_upload_bytes: int = MAX_UPLOAD_BYTES,
     schema: VectorSchemaPort | None = None,
+    *,
+    parser: DocumentParser | None = None,
+    pdf_max_pages: int = 500,
+    pdf_parse_timeout_seconds: float = 60,
 ) -> IngestionService:
     """Parser and splitter are the real, in-process adapters: deterministic, no I/O.
 
@@ -179,10 +196,11 @@ def make_ingestion(
     """
     return IngestionService(
         repository,
-        DocumentParserAdapter(),
+        parser or DocumentParserAdapter(max_pdf_pages=pdf_max_pages),
         RecursiveTextSplitter(chunk_size=500, chunk_overlap=50),
         embeddings,
         schema or FixedVectorSchema(EMBEDDING_DIMENSIONS),
         max_upload_bytes=max_upload_bytes,
         embedding_dimensions=EMBEDDING_DIMENSIONS,
+        pdf_parse_timeout_seconds=pdf_parse_timeout_seconds,
     )

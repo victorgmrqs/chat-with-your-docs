@@ -2,8 +2,10 @@
 
 import asyncio
 import logging
+import tempfile
 import uuid
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -19,6 +21,7 @@ from tests.factories import (
     EMBEDDING_DIMENSIONS,
     ClientFactory,
     StoredChunk,
+    blank_pdf,
     fixture_bytes,
     stored_chunks,
 )
@@ -106,6 +109,70 @@ def test_document_ingestion_file_too_large(documents_client_for: ClientFactory) 
 
     assert response.status_code == 413
     assert response.json()["code"] == "file_too_large"
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("quarterly-report.pdf", b"\x89PNG\r\n\x1a\n renamed image"),
+        ("notes.txt", b"caf\xe9 latin-1"),
+    ],
+    ids=["renamed-binary", "invalid-utf8-text"],
+)
+def test_document_ingestion_content_does_not_match_extension(
+    documents_client_for: ClientFactory, filename: str, content: bytes
+) -> None:
+    """DOM-01 (CWYD-19): the bytes must match the extension; nothing is stored otherwise."""
+    client = documents_client_for()
+
+    response = _upload(client, filename, content)
+
+    assert response.status_code == 415
+    assert response.json()["code"] == "unsupported_type"
+    assert "does not match" in response.json()["detail"]
+    assert client.get("/documents").json() == []
+
+
+def test_document_ingestion_too_many_pages(documents_client_for: ClientFactory) -> None:
+    """DOM-28: a PDF over PDF_MAX_PAGES ends Failed for good; a re-upload is returned as is."""
+    client = documents_client_for(pdf_max_pages=2)
+
+    accepted = _upload(client, "huge.pdf", blank_pdf(3))
+    document = client.get(f"/documents/{accepted.json()['id']}").json()
+    again = _upload(client, "huge.pdf", blank_pdf(3))
+
+    assert document["status"] == "failed"
+    assert document["failure_reason"] == "too_many_pages"
+    assert "Split it" in document["failure_message"]
+    assert document["can_retry"] is False
+    assert again.status_code == 200
+
+
+def test_document_ingestion_pdf_at_the_page_limit_is_indexed(
+    documents_client_for: ClientFactory,
+) -> None:
+    client = documents_client_for(pdf_max_pages=2)  # expense-policy.pdf has 2 pages
+
+    accepted = _upload(client, "expense-policy.pdf")
+    document = client.get(f"/documents/{accepted.json()['id']}").json()
+
+    assert document["status"] == "ready"
+    assert document["chunk_count"] > 0
+
+
+def test_document_ingestion_client_filename_never_reaches_the_disk(
+    documents_client_for: ClientFactory, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """DOM-28: the name is metadata; a body over 1 MB spills to an anonymous temporary file."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    client = documents_client_for()
+    body = b"Reception opens at eight.\n" * 60_000  # ~1.5 MB: spooled to disk by the parser
+
+    response = _upload(client, "../../evil-name.txt", body)
+
+    assert response.status_code == 202
+    assert response.json()["filename"] == "evil-name.txt"
+    assert [p for p in tmp_path.rglob("*") if "evil" in p.name] == []
 
 
 def test_ingestion_body_over_limit(documents_client_for: ClientFactory) -> None:

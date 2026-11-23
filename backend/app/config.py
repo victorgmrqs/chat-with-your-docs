@@ -30,6 +30,8 @@ class Settings(HttpSettings):
     openai_api_key: SecretStr
     anthropic_api_key: SecretStr | None = None
     max_upload_mb: int = Field(default=10, gt=0)  # DOM-01
+    pdf_max_pages: int = Field(default=500, gt=0)  # DOM-28
+    pdf_parse_timeout_seconds: float = Field(default=60, gt=0)  # DOM-28
     # Must match the vector(N) column created by migrations/versions/0001 (A5).
     embedding_dimensions: int = Field(default=1536, gt=0)
     chunk_size: int = Field(default=1000, gt=0)

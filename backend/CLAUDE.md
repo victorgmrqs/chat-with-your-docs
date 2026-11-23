@@ -20,6 +20,10 @@
   uploads and a startup log); `app/api/body_limit.py` is a pure ASGI middleware cutting off
   bodies over `MAX_UPLOAD_MB` + 1 MB (`413 file_too_large`); `EmbeddingMisconfigured` (a
   subclass of `EmbeddingUnavailable`) becomes the retryable `provider_misconfigured`.
+  Upload checks (CWYD-19, DOM-01/28): `check_content` (domain) rejects bytes that do not match
+  the extension; `DocumentParserAdapter(max_pdf_pages=...)` raises `TooManyPages` before
+  extracting text, and `IngestionService` wraps the PDF parse in `asyncio.timeout`
+  (`ParseTimeout`; cancelling the parse stops the worker thread at its next page).
 - Chat (CWYD-4): `POST /chat`, use case `AnswerQuestion` in `app/application/answering.py`
   (retrieve -> relevance gate -> optional rerank -> S-labelled context -> structured answer ->
   citation resolution), prompts/structured-output schemas in `app/application/prompts.py`,
