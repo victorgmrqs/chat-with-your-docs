@@ -19,6 +19,7 @@ from app.application.ports import (
 from app.domain.documents import (
     ACCEPTED_FORMATS_HINT,
     Document,
+    DocumentFormat,
     DocumentNotFound,
     DocumentStatus,
     EmbeddingDimensionMismatch,
@@ -26,7 +27,11 @@ from app.domain.documents import (
     FailureReason,
     FileTooLarge,
     NoExtractableText,
+    ParseTimeout,
+    Section,
+    TooManyPages,
     build_chunks,
+    check_content,
     clean_filename,
     detect_format,
 )
@@ -64,6 +69,7 @@ class IngestionService:
         *,
         max_upload_bytes: int,
         embedding_dimensions: int,
+        pdf_parse_timeout_seconds: float,
     ) -> None:
         self._repository = repository
         self._parser = parser
@@ -72,6 +78,7 @@ class IngestionService:
         self._schema = schema
         self._max_upload_bytes = max_upload_bytes
         self._embedding_dimensions = embedding_dimensions
+        self._pdf_parse_timeout = pdf_parse_timeout_seconds
         self._dimensions_match = False
 
     async def check_embedding_dimensions(self) -> None:
@@ -93,6 +100,7 @@ class IngestionService:
             raise EmptyFile(f"The file is empty. {ACCEPTED_FORMATS_HINT}")
         if len(content) > self._max_upload_bytes:
             raise FileTooLarge(self._max_upload_bytes // (1024 * 1024))
+        check_content(document_format, content)  # DOM-01: raises UnsupportedFormat
         await self.check_embedding_dimensions()  # DOM-26: before anything is stored
 
         now = datetime.now(UTC)
@@ -154,7 +162,7 @@ class IngestionService:
         """None when the document is Ready; otherwise why it failed (DOM-03)."""
         try:
             with t.step(t.INGEST_PARSE) as span:
-                sections = await self._parser.parse(content, document.format)
+                sections = await self._parse(document, content)
                 span.set_attribute(t.DOCUMENT_SECTIONS, len(sections))
             with t.step(t.INGEST_CHUNK) as span:
                 # CPU-bound on large files: keep the event loop free for polling and health checks.
@@ -171,6 +179,10 @@ class IngestionService:
         except NoExtractableText:
             # A permanent property of the file, not a system failure: the parse span shows it.
             return FailureReason.NO_EXTRACTABLE_TEXT
+        except TooManyPages:
+            return FailureReason.TOO_MANY_PAGES  # DOM-28, permanent like the case above
+        except ParseTimeout:
+            return FailureReason.PARSE_TIMEOUT  # DOM-28
         except EmbeddingMisconfigured as exc:
             # DOM-25: the operator must fix the key or model; every upload fails until then.
             _log_failure(
@@ -187,6 +199,16 @@ class IngestionService:
             _log_failure("Indexing failed for document %s: %s", document, exc)
             t.mark_failed(t.current_span(), exc)  # the root: no step is open here
             return FailureReason.INDEXING_FAILED
+
+    async def _parse(self, document: Document, content: bytes) -> list[Section]:
+        """DOM-28: a PDF gets PDF_PARSE_TIMEOUT_SECONDS; the timeout cancels the parse."""
+        if document.format is not DocumentFormat.PDF:
+            return await self._parser.parse(content, document.format)
+        try:
+            async with asyncio.timeout(self._pdf_parse_timeout):
+                return await self._parser.parse(content, document.format)
+        except TimeoutError:
+            raise ParseTimeout("PDF parse over budget") from None
 
     async def get(self, owner_id: uuid.UUID, document_id: uuid.UUID) -> Document:
         document = await self._repository.get(owner_id, document_id)

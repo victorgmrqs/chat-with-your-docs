@@ -39,6 +39,8 @@ Every variable is listed in [`.env.example`](.env.example).
 | `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                            |
 | `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
 | `MAX_UPLOAD_MB`     | no (10)                        | Upload size limit; larger files get `413`       |
+| `PDF_MAX_PAGES`     | no (500)                       | PDFs with more pages fail with `too_many_pages` |
+| `PDF_PARSE_TIMEOUT_SECONDS` | no (60)                | Longer PDF parses fail with `parse_timeout`     |
 | `RATE_LIMIT_*`      | no                             | Web server rate limits, see [Rate limits](#rate-limits) |
 | `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration; a mismatch fails readiness and uploads (`503`) |
 | `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
@@ -88,9 +90,12 @@ the backend health check, and the frontend only starts once the backend is ready
 
 ## Documents
 
-Upload `.pdf` (with selectable text), `.md` or `.txt` files up to `MAX_UPLOAD_MB`. Indexing runs
-in the background: the upload answers `202` with status `indexing`; poll until `ready` or
-`failed`.
+Upload `.pdf` (with selectable text), `.md` or `.txt` files up to `MAX_UPLOAD_MB`. The content
+must match the extension (a `.pdf` starts with `%PDF-`, text is UTF-8 without NUL bytes),
+otherwise `415`. Indexing
+runs in the background: the upload answers `202` with status `indexing`; poll until `ready` or
+`failed`. A PDF over `PDF_MAX_PAGES` or `PDF_PARSE_TIMEOUT_SECONDS` fails with `too_many_pages`
+or `parse_timeout` (DOM-28).
 
 ```bash
 curl -s -F file=@backend/tests/fixtures/documents/expense-policy.pdf localhost:8000/documents

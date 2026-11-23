@@ -209,7 +209,7 @@ export interface components {
          * FailureReason
          * @enum {string}
          */
-        FailureReason: "no_extractable_text" | "indexing_failed" | "provider_misconfigured";
+        FailureReason: "no_extractable_text" | "indexing_failed" | "provider_misconfigured" | "too_many_pages" | "parse_timeout";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */

@@ -84,7 +84,8 @@ class DocumentParser(Protocol):
     async def parse(self, content: bytes, document_format: DocumentFormat) -> list[Section]:
         """Text per page (PDF), heading section (Markdown) or whole file (text).
 
-        Raises NoExtractableText when the file has no usable text.
+        Raises NoExtractableText when the file has no usable text, and TooManyPages when a
+        PDF has more pages than allowed (DOM-28). Cancelling the call stops the parse.
         """
         ...
 

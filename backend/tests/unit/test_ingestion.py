@@ -15,13 +15,20 @@ from app.domain.documents import (
     FileTooLarge,
     UnsupportedFormat,
 )
-from tests.factories import EMBEDDING_DIMENSIONS, MAX_UPLOAD_BYTES, fixture_bytes, make_ingestion
+from tests.factories import (
+    EMBEDDING_DIMENSIONS,
+    MAX_UPLOAD_BYTES,
+    blank_pdf,
+    fixture_bytes,
+    make_ingestion,
+)
 from tests.fakes import (
     FailingEmbeddings,
     FakeEmbeddings,
     FixedVectorSchema,
     InMemoryDocumentRepository,
     MisconfiguredEmbeddings,
+    StalledParser,
 )
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
@@ -272,3 +279,67 @@ async def test_index_failure_that_cannot_be_recorded_does_not_raise() -> None:
     await service.index(result.document, content)  # background job: must not raise
 
     assert repository.documents[result.document.id].status is DocumentStatus.INDEXING
+
+
+@pytest.mark.parametrize(
+    ("filename", "content"),
+    [
+        ("quarterly-report.pdf", b"\x89PNG\r\n\x1a\n renamed image"),
+        ("notes.txt", b"caf\xe9 latin-1"),
+        ("notes.md", b"# Notes\x00"),
+    ],
+    ids=["renamed-binary", "invalid-utf8", "nul-byte"],
+)
+async def test_upload_content_not_matching_the_extension_raises(
+    filename: str, content: bytes
+) -> None:
+    repository = InMemoryDocumentRepository()
+
+    with pytest.raises(UnsupportedFormat, match="does not match"):
+        await _service(repository).upload(OWNER, filename, content)
+
+    assert await repository.list_for_owner(OWNER) == []  # DOM-01: rejected before storing
+
+
+async def test_index_pdf_over_the_page_limit_fails_permanently() -> None:
+    repository = InMemoryDocumentRepository()
+    service = make_ingestion(repository, FakeEmbeddings(8), pdf_max_pages=3)
+    content = blank_pdf(4)
+    result = await service.upload(OWNER, "huge.pdf", content)
+
+    await service.index(result.document, content)
+    document = await service.get(OWNER, result.document.id)
+    again = await service.upload(OWNER, "huge.pdf", content)
+
+    assert document.failure_reason is FailureReason.TOO_MANY_PAGES
+    assert "Split it" in (document.failure_message or "")
+    assert document.can_retry is False
+    assert again.needs_indexing is False  # DOM-04: permanent, returned as is
+
+
+async def test_index_pdf_parse_over_the_time_budget_fails_permanently() -> None:
+    repository = InMemoryDocumentRepository()
+    parser = StalledParser()
+    service = make_ingestion(
+        repository, FakeEmbeddings(8), parser=parser, pdf_parse_timeout_seconds=0.01
+    )
+    content = fixture_bytes("expense-policy.pdf")
+    result = await service.upload(OWNER, "expense-policy.pdf", content)
+
+    await service.index(result.document, content)
+    document = await service.get(OWNER, result.document.id)
+
+    assert document.failure_reason is FailureReason.PARSE_TIMEOUT
+    assert "took too long" in (document.failure_message or "")
+    assert document.can_retry is False
+    assert parser.cancelled is True  # DOM-28: the parse is cancelled, not left running
+
+
+async def test_index_text_is_not_bound_by_the_pdf_parse_timeout() -> None:
+    """DOM-28: PDF_PARSE_TIMEOUT_SECONDS applies to PDFs only."""
+    repository = InMemoryDocumentRepository()
+    service = make_ingestion(repository, FakeEmbeddings(8), pdf_parse_timeout_seconds=1e-9)
+
+    document = await _upload_and_index(service, "office-handbook.txt")
+
+    assert document.status is DocumentStatus.READY

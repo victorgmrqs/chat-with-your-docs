@@ -3,23 +3,30 @@
 // Browser demo triggers (VITE_API_MOCKS=true): a filename containing "scanned" fails with
 // no_extractable_text; one containing "flaky" fails with indexing_failed and one containing
 // "misconfigured" with provider_misconfigured on its first upload (both retryable, DOM-04).
+// "huge" fails with too_many_pages and "slow" with parse_timeout (permanent, DOM-28).
 import type { DocumentResponse } from '@/api/client'
 
 import { documentResponse, extensionOf, MESSAGES } from './data'
 
-type Outcome = 'ready' | 'no_extractable_text' | 'indexing_failed' | 'provider_misconfigured'
+type Outcome = 'ready' | NonNullable<DocumentResponse['failure_reason']>
 
 const FAILURE_MESSAGE: Record<Exclude<Outcome, 'ready'>, string> = {
   no_extractable_text: MESSAGES.noExtractableText,
   indexing_failed: MESSAGES.indexingFailed,
   provider_misconfigured: MESSAGES.providerMisconfigured,
+  too_many_pages: MESSAGES.tooManyPages,
+  parse_timeout: MESSAGES.parseTimeout,
 }
+
+const RETRYABLE: ReadonlySet<Outcome> = new Set(['indexing_failed', 'provider_misconfigured'])
 
 /** First upload of a file: the demo triggers in its name decide how indexing ends. */
 function outcomeFor(filename: string): Outcome {
   if (filename.includes('scanned')) return 'no_extractable_text'
   if (filename.includes('flaky')) return 'indexing_failed'
   if (filename.includes('misconfigured')) return 'provider_misconfigured'
+  if (filename.includes('huge')) return 'too_many_pages'
+  if (filename.includes('slow')) return 'parse_timeout'
   return 'ready'
 }
 
@@ -107,7 +114,7 @@ function finish(entry: StoredDocument) {
           status: 'failed',
           failure_reason: entry.outcome,
           failure_message: FAILURE_MESSAGE[entry.outcome],
-          can_retry: entry.outcome !== 'no_extractable_text', // DOM-04
+          can_retry: RETRYABLE.has(entry.outcome), // DOM-04
           updated_at,
         }
 }

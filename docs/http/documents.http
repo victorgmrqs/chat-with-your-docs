@@ -45,6 +45,27 @@ Content-Type: application/octet-stream
 < ./backend/tests/fixtures/documents/unsupported.docx
 --cwyd--
 
+### Content must match the extension (CWYD-19, DOM-01): bytes that are not a PDF, sent as .pdf,
+# answer 415 {"code":"unsupported_type","detail":"The file content does not match its .pdf
+# extension. Upload a .pdf with selectable text, a .md or a .txt file."} and nothing is stored.
+# Same for a .txt or .md that is not valid UTF-8 or contains NUL bytes.
+POST {{api}}/documents
+Content-Type: multipart/form-data; boundary=cwyd
+
+--cwyd
+Content-Disposition: form-data; name="file"; filename="renamed.pdf"
+Content-Type: application/pdf
+
+< ./backend/tests/fixtures/documents/office-handbook.txt
+--cwyd--
+
+### PDF budget (CWYD-19, DOM-28): a PDF over PDF_MAX_PAGES (500) ends
+# {"status":"failed","failure_reason":"too_many_pages","failure_message":"The PDF has more pages
+# than allowed. Split it into smaller files and upload those.","can_retry":false}; a parse over
+# PDF_PARSE_TIMEOUT_SECONDS (60) ends "parse_timeout" ("Reading the PDF took too long. ...").
+# Both are permanent: the same file again answers 200 with the failed document. Generated
+# inputs and real output: docs/evidence/CWYD-19-upload-validation.md.
+
 ### no_extractable_text: 202, then GET shows failed + "no_extractable_text"
 # @name scanned
 POST {{api}}/documents

@@ -230,6 +230,20 @@ describe('App', () => {
     expect(await within(sidebar()).findByText('1 ready')).toBeInTheDocument()
   })
 
+  it.each([
+    ['too_many_pages', 'Handbook_huge.pdf', MESSAGES.tooManyPages],
+    ['parse_timeout', 'Handbook_slow.pdf', MESSAGES.parseTimeout],
+  ])('shows the %s message without Retry (DOM-28)', async (_reason, name, message) => {
+    const { sidebar, upload } = setup()
+
+    await upload(file(name))
+    await within(sidebar()).findByText('0 ready · 1 indexing')
+    mockDb.finishIndexing()
+
+    expect(await within(sidebar()).findByText(message)).toBeInTheDocument()
+    expect(within(sidebar()).queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
   it('does not claim an empty collection while the list is loading', async () => {
     // Held until the end of the test: a request left pending would stall the next test's.
     let answer = () => {}

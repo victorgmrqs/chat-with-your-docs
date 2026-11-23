@@ -15,8 +15,14 @@ from app.domain.documents import (
     Section,
     build_chunks,
 )
-from tests.factories import EMBEDDING_DIMENSIONS, make_document, stored_chunks
-from tests.fakes import FakeEmbeddings
+from tests.factories import (
+    EMBEDDING_DIMENSIONS,
+    fixture_bytes,
+    make_document,
+    make_ingestion,
+    stored_chunks,
+)
+from tests.fakes import FakeEmbeddings, StalledParser
 
 pytestmark = pytest.mark.integration
 
@@ -246,3 +252,24 @@ async def test_fail_interrupted_indexing_fails_documents_left_indexing(
     assert stored is not None
     assert stored.status is DocumentStatus.FAILED
     assert stored.failure_reason is FailureReason.INDEXING_FAILED
+
+
+async def test_ingestion_parse_timeout_ends_failed(repository: PostgresDocumentRepository) -> None:
+    """DOM-28: a PDF parse over the budget ends Failed in the database (fake parser, no wait)."""
+    owner = uuid.uuid4()
+    service = make_ingestion(
+        repository,
+        FakeEmbeddings(EMBEDDING_DIMENSIONS),
+        parser=StalledParser(),
+        pdf_parse_timeout_seconds=0.01,
+    )
+    content = fixture_bytes("expense-policy.pdf")
+    result = await service.upload(owner, "expense-policy.pdf", content)
+
+    await service.index(result.document, content)
+    stored = await repository.get(owner, result.document.id)
+
+    assert stored is not None
+    assert stored.status is DocumentStatus.FAILED
+    assert stored.failure_reason is FailureReason.PARSE_TIMEOUT
+    assert stored.chunk_count == 0
