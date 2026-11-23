@@ -2,7 +2,7 @@
 
 Baseline with MIN_RELEVANCE 0.45 — a stricter evidence gate (DOM-08), aimed at refusing unrelated questions without calling the chat model.
 
-- Run: 2026-11-23 18:11 UTC
+- Run: 2026-11-23 18:49 UTC
 - Dataset: `backend/eval/dataset.yaml` (sha256 `18cf4aa7427b`)
 - Settings: `chat_provider=anthropic`, `chat_model=claude-haiku-5-5`, `embedding_model=text-embedding-3-small`, `chunk_size=1000`, `chunk_overlap=150`, `retrieval_candidates=20`, `retrieval_top_k=6`, `min_relevance=0.45`, `rerank_enabled=False`, `rerank_top_n=4`, `context_token_budget=3000`, `answer_max_tokens=800`, `chat_temperature=None`
 
@@ -17,8 +17,8 @@ Baseline with MIN_RELEVANCE 0.45 — a stricter evidence gate (DOM-08), aimed at
 | Correct refusal rate | 100% |
 | Citation validity | 100% |
 | Citation recall (mean) | 100% |
-| Latency p50 / p95 | 1137 / 1508 ms |
-| Tokens in / out | 14154 / 1259 |
+| Latency p50 / p95 | 1160 / 1557 ms |
+| Tokens in / out | 14154 / 1260 |
 | Chat cost | $0.0020 |
 | Answers using the reranked order | 0 |
 
@@ -35,23 +35,23 @@ Baseline with MIN_RELEVANCE 0.45 — a stricter evidence gate (DOM-08), aimed at
 
 | Question | Category | Expected | Outcome | hit@k | MRR | Refusal ok | Citations valid | Cited | Latency | Tokens in/out | Cost |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| `coworking_two_sources` | two_sources | answered | answered | 100% | 0.75 | - | yes | 2 | 1508 ms | 1336/193 | $0.0002 |
-| `exact_term_amount` | exact_term | answered | answered | 100% | 1.00 | - | yes | 1 | 1250 ms | 1332/124 | $0.0002 |
-| `coworking_approval_notice` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1137 ms | 1409/103 | $0.0002 |
-| `expense_submission_deadline` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1237 ms | 1230/109 | $0.0002 |
-| `parental_leave_duration` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1089 ms | 1477/109 | $0.0002 |
-| `parental_leave_eligibility` | single_source | answered | answered | 100% | 0.38 | - | yes | 2 | 1404 ms | 1260/124 | $0.0002 |
-| `contractor_parental_leave` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1135 ms | 1411/103 | $0.0002 |
-| `office_opening_hours` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1106 ms | 1234/101 | $0.0002 |
-| `meeting_room_booking` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1186 ms | 1065/115 | $0.0002 |
-| `leave_split_not_covered` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1086 ms | 1188/89 | $0.0002 |
-| `home_office_equipment` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1317 ms | 1212/89 | $0.0002 |
-| `unrelated_capital` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 331 ms | 0/0 | $0.0000 |
-| `unrelated_recipe` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 289 ms | 0/0 | $0.0000 |
+| `coworking_two_sources` | two_sources | answered | answered | 100% | 0.75 | - | yes | 2 | 1557 ms | 1336/193 | $0.0002 |
+| `exact_term_amount` | exact_term | answered | answered | 100% | 1.00 | - | yes | 1 | 1218 ms | 1332/124 | $0.0002 |
+| `coworking_approval_notice` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1094 ms | 1409/103 | $0.0002 |
+| `expense_submission_deadline` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1266 ms | 1230/110 | $0.0002 |
+| `parental_leave_duration` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1251 ms | 1477/108 | $0.0002 |
+| `parental_leave_eligibility` | single_source | answered | answered | 100% | 0.38 | - | yes | 2 | 1185 ms | 1260/124 | $0.0002 |
+| `contractor_parental_leave` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1160 ms | 1411/103 | $0.0002 |
+| `office_opening_hours` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1095 ms | 1234/102 | $0.0002 |
+| `meeting_room_booking` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1171 ms | 1065/115 | $0.0002 |
+| `leave_split_not_covered` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1124 ms | 1188/89 | $0.0002 |
+| `home_office_equipment` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1062 ms | 1212/89 | $0.0002 |
+| `unrelated_capital` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 392 ms | 0/0 | $0.0000 |
+| `unrelated_recipe` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 321 ms | 0/0 | $0.0000 |
 
 ## Adversarial cases (prompt injection)
 
-Dataset: `backend/eval/adversarial.yaml` (sha256 `03b37fb562b8`), indexed under its own evaluation owner (DOM-29).
+Dataset: `backend/eval/adversarial.yaml` (sha256 `cb194d1956fc`), indexed under its own evaluation owner (DOM-29).
 
 | Metric | Value |
 |---|---|

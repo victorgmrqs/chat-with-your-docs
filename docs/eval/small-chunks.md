@@ -2,7 +2,7 @@
 
 Baseline with chunks of 120/20 characters — fixture pages and sections are under 300 characters, so only chunks this small split them (closer to one sentence per chunk).
 
-- Run: 2026-11-23 18:10 UTC
+- Run: 2026-11-23 18:49 UTC
 - Dataset: `backend/eval/dataset.yaml` (sha256 `18cf4aa7427b`)
 - Settings: `chat_provider=anthropic`, `chat_model=claude-haiku-5-5`, `embedding_model=text-embedding-3-small`, `chunk_size=120`, `chunk_overlap=20`, `retrieval_candidates=20`, `retrieval_top_k=6`, `min_relevance=0.3`, `rerank_enabled=False`, `rerank_top_n=4`, `context_token_budget=3000`, `answer_max_tokens=800`, `chat_temperature=None`
 
@@ -17,8 +17,8 @@ Baseline with chunks of 120/20 characters — fixture pages and sections are und
 | Correct refusal rate | 100% |
 | Citation validity | 89% |
 | Citation recall (mean) | 100% |
-| Latency p50 / p95 | 1192 / 1427 ms |
-| Tokens in / out | 14473 / 1247 |
+| Latency p50 / p95 | 1182 / 1571 ms |
+| Tokens in / out | 14473 / 1240 |
 | Chat cost | $0.0021 |
 | Answers using the reranked order | 0 |
 
@@ -35,23 +35,23 @@ Baseline with chunks of 120/20 characters — fixture pages and sections are und
 
 | Question | Category | Expected | Outcome | hit@k | MRR | Refusal ok | Citations valid | Cited | Latency | Tokens in/out | Cost |
 |---|---|---|---|---|---|---|---|---|---|---|---|
-| `coworking_two_sources` | two_sources | answered | answered | 100% | 0.75 | - | **no** | 3 | 1427 ms | 1341/168 | $0.0002 |
-| `exact_term_amount` | exact_term | answered | answered | 100% | 1.00 | - | yes | 1 | 1324 ms | 1345/135 | $0.0002 |
-| `coworking_approval_notice` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1192 ms | 1323/103 | $0.0002 |
-| `expense_submission_deadline` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1271 ms | 1275/110 | $0.0002 |
-| `parental_leave_duration` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1180 ms | 1382/109 | $0.0002 |
-| `parental_leave_eligibility` | single_source | answered | answered | 100% | 0.27 | - | yes | 2 | 1202 ms | 1364/124 | $0.0002 |
-| `contractor_parental_leave` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1167 ms | 1377/104 | $0.0002 |
-| `office_opening_hours` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1223 ms | 1296/102 | $0.0002 |
-| `meeting_room_booking` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1142 ms | 1117/114 | $0.0002 |
-| `leave_split_not_covered` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1215 ms | 1373/89 | $0.0002 |
-| `home_office_equipment` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1134 ms | 1280/89 | $0.0002 |
-| `unrelated_capital` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 334 ms | 0/0 | $0.0000 |
-| `unrelated_recipe` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 337 ms | 0/0 | $0.0000 |
+| `coworking_two_sources` | two_sources | answered | answered | 100% | 0.75 | - | **no** | 3 | 1571 ms | 1341/162 | $0.0002 |
+| `exact_term_amount` | exact_term | answered | answered | 100% | 1.00 | - | yes | 1 | 1420 ms | 1345/135 | $0.0002 |
+| `coworking_approval_notice` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1183 ms | 1323/103 | $0.0002 |
+| `expense_submission_deadline` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1217 ms | 1275/110 | $0.0002 |
+| `parental_leave_duration` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1154 ms | 1382/109 | $0.0002 |
+| `parental_leave_eligibility` | single_source | answered | answered | 100% | 0.27 | - | yes | 2 | 1240 ms | 1364/124 | $0.0002 |
+| `contractor_parental_leave` | single_source | answered | answered | 100% | 0.50 | - | yes | 1 | 1284 ms | 1377/103 | $0.0002 |
+| `office_opening_hours` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1170 ms | 1296/102 | $0.0002 |
+| `meeting_room_booking` | single_source | answered | answered | 100% | 1.00 | - | yes | 1 | 1182 ms | 1117/114 | $0.0002 |
+| `leave_split_not_covered` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1061 ms | 1373/89 | $0.0002 |
+| `home_office_equipment` | not_covered | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 1150 ms | 1280/89 | $0.0002 |
+| `unrelated_capital` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 309 ms | 0/0 | $0.0000 |
+| `unrelated_recipe` | unrelated | insufficient_evidence | insufficient_evidence | n/a | n/a | yes | - | 0 | 318 ms | 0/0 | $0.0000 |
 
 ## Adversarial cases (prompt injection)
 
-Dataset: `backend/eval/adversarial.yaml` (sha256 `03b37fb562b8`), indexed under its own evaluation owner (DOM-29).
+Dataset: `backend/eval/adversarial.yaml` (sha256 `cb194d1956fc`), indexed under its own evaluation owner (DOM-29).
 
 | Metric | Value |
 |---|---|

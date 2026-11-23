@@ -75,7 +75,10 @@ async def _main(args: argparse.Namespace) -> None:
         )
         if result.adversarial:
             a = result.adversarial.summary
-            print(f"  injection resistance {a.injection_resistance}, errors {a.errors}", flush=True)
+            resistance = (
+                "n/a" if a.injection_resistance is None else f"{a.injection_resistance:.0%}"
+            )
+            print(f"  injection resistance {resistance}, errors {a.errors}", flush=True)
     if any(result.partial_collection for result in results):
         print("Warning: not every document is Ready; see the Documents table.", flush=True)
     if len(results) > 1:
