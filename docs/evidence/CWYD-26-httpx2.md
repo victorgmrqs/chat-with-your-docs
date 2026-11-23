@@ -37,7 +37,14 @@ Installed after `uv sync --locked`: `httpx 0.28.1` (runtime transitive) and `htt
 ======================= 330 passed, 2 skipped in 46.90s ========================
 ```
 
-`-W error::DeprecationWarning` (the card's first option) stops on an unrelated warning: langsmith
-calls `asyncio.iscoroutinefunction`. `pyproject.toml` already filters that warning, and a
-command-line `-W` overrides the filter. Escalating only Starlette's warning class checks the same
-thing without that noise.
+`-W error::DeprecationWarning` (the card's first option) would not test this at all:
+`StarletteDeprecationWarning` subclasses `UserWarning`, not `DeprecationWarning`. That run also
+stops early on an unrelated langsmith warning (`asyncio.iscoroutinefunction`), which
+`pyproject.toml` filters but a command-line `-W` overrides. Escalating Starlette's own class,
+`starlette.exceptions.StarletteDeprecationWarning`, is the check that catches the warning.
+
+## CI
+
+`ci-gate` passed on the PR (run 45246870013). The `backend checks` job installs with
+`uv sync --locked` and the image build with `uv sync --locked --no-dev`, so the committed
+`uv.lock` matches `pyproject.toml`.
