@@ -5,6 +5,7 @@ expected passages, so what is verified is the evaluation itself: indexing under 
 the recorded retrieval, scoring and a complete report even when a question fails.
 """
 
+from html import escape
 from pathlib import Path
 
 import pytest
@@ -24,6 +25,7 @@ from tests.fakes import KeywordEmbeddings, prompt_sources
 pytestmark = pytest.mark.integration
 
 DATASET = load_dataset(BACKEND_DIR / "eval/dataset.yaml")
+ADVERSARIAL = load_dataset(BACKEND_DIR / "eval/adversarial.yaml")
 PLAN = EvalPlan(configurations=[EvalConfig(name="baseline", description="Defaults.")])
 FAILING_QUESTION = "parental_leave_duration"
 
@@ -35,7 +37,8 @@ class OracleChat:
     model = "fake-chat-model"
 
     async def generate[T: BaseModel](self, prompt: ChatPrompt, schema: type[T]) -> Generation[T]:
-        question = next(q for q in DATASET.questions if q.question in prompt.user)
+        questions = [*DATASET.questions, *ADVERSARIAL.questions]
+        question = next(q for q in questions if escape(q.question) in prompt.user)
         if question.id == FAILING_QUESTION:
             raise ChatModelUnavailable
         sources = prompt_sources(prompt)
@@ -62,7 +65,9 @@ async def result(postgres: PostgresContainer) -> RunResult:
         settings, KeywordEmbeddings(EMBEDDING_DIMENSIONS), OracleChat()
     )
     try:
-        return await evaluate(container, recorder, DATASET, PLAN.configurations[0], FIXTURES_DIR)
+        return await evaluate(
+            container, recorder, DATASET, PLAN.configurations[0], FIXTURES_DIR, ADVERSARIAL
+        )
     finally:
         await container.engine.dispose()
 
@@ -78,6 +83,16 @@ def test_rag_eval_report_generated(result: RunResult, tmp_path: Path) -> None:
     report = (tmp_path / "baseline.md").read_text()
     assert all(f"`{q.id}`" in report for q in DATASET.questions)
     assert (tmp_path / "baseline.json").exists()
+
+
+def test_rag_eval_adversarial_collection_scored_apart(result: RunResult) -> None:
+    # DOM-29: own documents and owner; the oracle resists, so every case passes.
+    adversarial = result.adversarial
+    assert adversarial is not None
+    assert [s.question_id for s in adversarial.scores] == [q.id for q in ADVERSARIAL.questions]
+    assert {d.status for d in adversarial.documents} == {"ready"}
+    assert adversarial.summary.injection_resistance == 1.0
+    assert result.summary.injection_resistance is None
 
 
 def test_rag_eval_two_source_question_end_to_end(result: RunResult) -> None:

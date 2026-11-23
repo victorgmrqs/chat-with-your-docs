@@ -89,6 +89,12 @@ All notable changes to this project are documented here. The format follows
   through it at `/api/docs` (spec at `/api/openapi.json`, "Try it out" included) as well as directly
   on the API at `/docs`, since the API honours `X-Forwarded-Prefix` only when it equals
   `API_ROOT_PATH` (default `/api`) ([CWYD-20](https://goncalvesmarques.atlassian.net/browse/CWYD-20)).
+- Instructions written inside an uploaded document (override the rules, reveal the prompt, cite
+  another file, hidden PDF text) are never followed nor counted as evidence (DOM-29), and an
+  adversarial prompt-injection set (8 cases over 8 fictitious documents, own evaluation owner so
+  the golden metrics stay comparable) now runs with every evaluation and is reported in its own
+  section; the regression tolerance is documented in `docs/eval/README.md`
+  ([CWYD-21](https://goncalvesmarques.atlassian.net/browse/CWYD-21)).
 
 ### Maintenance
 

@@ -6,7 +6,7 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
-from eval.runner import RunResult
+from eval.runner import AdversarialRun, DocumentRow, RunResult
 from eval.scoring import Summary
 
 
@@ -42,6 +42,51 @@ def _summary_rows(summary: Summary) -> list[tuple[str, str]]:
     ]
 
 
+def _document_rows(documents: Sequence[DocumentRow]) -> list[str]:
+    return [
+        "| File | Status | Chunks |",
+        "|---|---|---|",
+        *(
+            f"| {d.filename} | {d.status}{f' ({d.failure_reason})' if d.failure_reason else ''}"
+            f" | {d.chunk_count} |"
+            for d in documents
+        ),
+    ]
+
+
+def _adversarial_section(run: AdversarialRun) -> list[str]:
+    """DOM-29: shown apart from the golden metrics; failure reasons only, never answer text."""
+    summary = run.summary
+    lines = [
+        "## Adversarial cases (prompt injection)",
+        "",
+        f"Dataset: `backend/eval/adversarial.yaml` (sha256 `{run.dataset_sha256[:12]}`), "
+        "indexed under its own evaluation owner (DOM-29).",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Cases (errors) | {summary.questions} ({summary.errors}) |",
+        f"| Injection resistance | {_pct(summary.injection_resistance)} |",
+        f"| Outcome accuracy | {_pct(summary.outcome_accuracy)} |",
+        f"| Citation validity | {_pct(summary.citation_validity)} |",
+        f"| Chat cost | {_usd(summary.cost_usd)} |",
+        "",
+        *_document_rows(run.documents),
+        "",
+        "| Case | Attack | Expected | Outcome | Citations valid | Cited | Result |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for s in run.scores:
+        outcome = s.outcome or f"error: {s.error}"
+        failures = s.injection_failures or ()
+        result = "resisted" if not failures else "**failed: " + ", ".join(failures) + "**"
+        lines.append(
+            f"| `{s.question_id}` | {s.attack} | {s.expected_outcome} | {outcome} "
+            f"| {_flag(s.citation_valid)} | {s.cited} | {result} |"
+        )
+    return lines
+
+
 def render_run(result: RunResult) -> str:
     lines = [
         f"# RAG evaluation — `{result.config.name}`",
@@ -65,13 +110,7 @@ def render_run(result: RunResult) -> str:
         "",
         "## Documents",
         "",
-        "| File | Status | Chunks |",
-        "|---|---|---|",
-        *(
-            f"| {d.filename} | {d.status}{f' ({d.failure_reason})' if d.failure_reason else ''}"
-            f" | {d.chunk_count} |"
-            for d in result.documents
-        ),
+        *_document_rows(result.documents),
         "",
         "## Questions",
         "",
@@ -90,6 +129,8 @@ def render_run(result: RunResult) -> str:
             f"| {s.cited} | {s.latency_ms:.0f} ms | {s.input_tokens}/{s.output_tokens} "
             f"| {_usd(s.cost_usd)} |"
         )
+    if result.adversarial:
+        lines += ["", *_adversarial_section(result.adversarial)]
     return "\n".join(lines) + "\n"
 
 
@@ -99,6 +140,12 @@ def render_comparison(results: Sequence[RunResult]) -> str:
     columns = [_summary_rows(r.summary) for r in results]
     for metric in zip(*columns, strict=True):  # one row per metric, one cell per configuration
         rows.append(f"| {metric[0][0]} | " + " | ".join(value for _, value in metric) + " |")
+    if any(r.adversarial for r in results):  # DOM-29, from the separate adversarial collection
+        cells = [
+            _pct(r.adversarial.summary.injection_resistance) if r.adversarial else "n/a"
+            for r in results
+        ]
+        rows.append("| Prompt-injection resistance (adversarial set) | " + " | ".join(cells) + " |")
     descriptions = [f"- `{r.config.name}`: {r.config.description}" for r in results]
     return (
         "\n".join(
