@@ -18,6 +18,8 @@ class HttpSettings(BaseSettings):
     """Read at import time by `create_app`, before the full Settings (database, keys) exist."""
 
     api_docs_enabled: bool = True  # false removes /docs, /redoc and /openapi.json
+    # CWYD-20: the only X-Forwarded-Prefix accepted as root path (the web server's /api).
+    api_root_path: str = Field(default="/api", pattern=r"^/[A-Za-z0-9._~-]+(/[A-Za-z0-9._~-]+)*$")
 
     model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 

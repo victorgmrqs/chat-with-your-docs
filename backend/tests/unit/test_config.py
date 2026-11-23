@@ -1,6 +1,7 @@
 import pytest
+from pydantic import ValidationError
 
-from app.config import ConfigurationError, load_settings
+from app.config import ConfigurationError, HttpSettings, load_settings
 from tests.factories import REQUIRED_ENV
 
 
@@ -103,3 +104,10 @@ def test_load_settings_rejects_min_relevance_above_one(valid_env: pytest.MonkeyP
 
     with pytest.raises(ConfigurationError, match="MIN_RELEVANCE"):
         load_settings()
+
+
+@pytest.mark.parametrize("value", ["api", "/api/", "/", "/a b", "/api//docs"])
+def test_api_root_path_must_be_an_absolute_path_without_trailing_slash(value: str) -> None:
+    """CWYD-20: compared verbatim with X-Forwarded-Prefix; a malformed value never matches."""
+    with pytest.raises(ValidationError):
+        HttpSettings(api_root_path=value)

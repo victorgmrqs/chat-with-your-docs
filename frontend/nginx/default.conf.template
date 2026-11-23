@@ -29,6 +29,9 @@ server {
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     add_header X-Frame-Options "DENY" always;
     add_header Content-Security-Policy $content_security_policy always;
+    # CWYD-20: deny the browser features the app never uses; no nginx version in headers or pages.
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    server_tokens off;
 
     location /api/ {
         # Uploads: nginx defaults to 1 MB. MAX_UPLOAD_MB (10) plus multipart overhead;
@@ -43,6 +46,8 @@ server {
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        # CWYD-20: the API serves its docs and spec under /api (API_ROOT_PATH must match).
+        proxy_set_header X-Forwarded-Prefix /api;
 
         # Nested locations inherit the body limit, error pages and proxy headers; proxy_pass is
         # not inherited, so each one names its backend path.

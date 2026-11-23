@@ -64,6 +64,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
 | `PRICE_TABLE_PATH`  | no (`app/prices.yaml`)         | Chat model prices for the estimated cost, relative to `backend/` |
 | `API_DOCS_ENABLED`  | no (true)                      | `false` removes `/docs`, `/redoc` and `/openapi.json` (404); set it in production |
+| `API_ROOT_PATH`     | no (/api)                      | Prefix the web server proxies to the API; must match its `X-Forwarded-Prefix` |
 | `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
@@ -249,17 +250,23 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 
 The web server ([`frontend/nginx/default.conf.template`](frontend/nginx/default.conf.template)) sends
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and
-`X-Frame-Options: DENY` on every response, errors included. The app itself also gets a
+`X-Frame-Options: DENY` and `Permissions-Policy: camera=(), microphone=(), geolocation=(),
+payment=(), usb=()` on every response, errors included, and does not announce its version
+(`Server: nginx`). The app itself also gets a
 `Content-Security-Policy` that allows only same-origin scripts, styles, fonts and requests and
 forbids framing. API responses under `/api/` do not: JSON needs no CSP, and it would block
-Swagger UI's inline script and CDN assets. Swagger UI is at `http://localhost:8000/docs`;
-through the web server (`/api/docs`) it still asks for `/openapi.json` without the `/api`
-prefix. Check the headers with `curl -I http://localhost:8080/`
+Swagger UI's inline script and CDN assets. HSTS is set by the ingress that ends TLS (CWYD-7).
+Check the headers with `curl -I http://localhost:8080/`
 ([`docs/http/security.http`](docs/http/security.http)).
 
 The API docs (`/docs`, `/redoc`, `/openapi.json`) are on by default for local and homolog use.
 Production sets `API_DOCS_ENABLED=false`, which makes the three routes return `404`; the
-committed `frontend/openapi.json` export does not depend on them.
+committed `frontend/openapi.json` export does not depend on them. Swagger UI works both
+through the web server (`http://localhost:8080/api/docs`, the only entry point in homolog) and
+directly (`http://localhost:8000/docs`): nginx sends `X-Forwarded-Prefix: /api`, and when it
+equals `API_ROOT_PATH` the API serves the page and spec as seen from the browser
+(`/api/openapi.json`, `servers: [{"url": "/api"}]`), so "Try it out" calls `/api/...`. Any other
+value of the header is ignored. Direct calls carry no header and keep the plain paths.
 
 ## Rate limits
 
