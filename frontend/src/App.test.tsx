@@ -148,6 +148,22 @@ describe('App', () => {
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
   })
 
+  it('rate_limited: a question over the limit shows the message without Retry (DOM-27)', async () => {
+    const { ask } = await setupWithReadyDocument(
+      http.post('/api/chat', () =>
+        HttpResponse.json(domainError('rate_limited', MESSAGES.rateLimited), {
+          status: 429,
+          headers: { 'Retry-After': '60' },
+        }),
+      ),
+    )
+
+    await ask('Anything?')
+
+    expect(await screen.findByText(MESSAGES.rateLimited)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+  })
+
   it('docs_chat_request_failure: a network failure is retryable', async () => {
     const { ask } = await setupWithReadyDocument(
       http.post('/api/chat', () => HttpResponse.error(), { once: true }),
@@ -157,6 +173,20 @@ describe('App', () => {
 
     expect(await screen.findByText(/Couldn't reach the server/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+  })
+
+  it('rate_limited: an upload over the limit shows the message as a rejection (DOM-27)', async () => {
+    server.use(
+      http.post('/api/documents', () =>
+        HttpResponse.json(domainError('rate_limited', MESSAGES.rateLimited), { status: 429 }),
+      ),
+    )
+    const { sidebar, upload } = setup()
+
+    await upload(file('Benefits.pdf'))
+
+    expect(await within(sidebar()).findByText("Benefits.pdf wasn't added")).toBeInTheDocument()
+    expect(within(sidebar()).getByText(MESSAGES.rateLimited)).toBeInTheDocument()
   })
 
   it('shows an upload rejection with the backend message', async () => {

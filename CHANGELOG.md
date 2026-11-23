@@ -73,6 +73,11 @@ All notable changes to this project are documented here. The format follows
   rejected embeddings API key or model ends `provider_misconfigured`, retryable by re-upload once
   the operator fixes it, with Retry offered in the UI (documents now carry `can_retry`). The README
   shows the `DEFAULT_OWNER_ID` default ([CWYD-16](https://goncalvesmarques.atlassian.net/browse/CWYD-16)).
+- The web server rate-limits questions and uploads per client address (questions 10 per minute,
+  burst 5, at most 2 at a time; uploads 6 per minute, burst 3; listing and polling stay free):
+  requests over a limit get `429 rate_limited` with `Retry-After: 60`, shown in the app without
+  Retry, and the limits are tunable with `RATE_LIMIT_*` in `.env`
+  ([CWYD-18](https://goncalvesmarques.atlassian.net/browse/CWYD-18)).
 
 ### Maintenance
 

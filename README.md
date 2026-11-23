@@ -39,6 +39,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                            |
 | `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
 | `MAX_UPLOAD_MB`     | no (10)                        | Upload size limit; larger files get `413`       |
+| `RATE_LIMIT_*`      | no                             | Web server rate limits, see [Rate limits](#rate-limits) |
 | `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration; a mismatch fails readiness and uploads (`503`) |
 | `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
 | `CHUNK_OVERLAP`     | no (150)                       | Overlap between chunks; smaller than the size   |
@@ -254,6 +255,33 @@ prefix. Check the headers with `curl -I http://localhost:8080/`
 The API docs (`/docs`, `/redoc`, `/openapi.json`) are on by default for local and homolog use.
 Production sets `API_DOCS_ENABLED=false`, which makes the three routes return `404`; the
 committed `frontend/openapi.json` export does not depend on them.
+
+## Rate limits
+
+The web server limits each client address (DOM-27): questions (`POST /api/chat`) to 10 per
+minute with a burst of 5 and at most 2 at a time, uploads (`POST /api/documents`) to 6 per minute
+with a burst of 3. Listing and polling documents is not limited. A request over a limit gets
+`429` with `{"code":"rate_limited","detail":"Too many requests. Try again in a minute."}`, a
+`Retry-After: 60` header and the security headers above; the app shows the message. Direct calls
+to the API (`:8000`) are not limited.
+
+Change them in `.env` and restart the web server (`docker compose up -d frontend`):
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `RATE_LIMIT_CHAT` | `10r/m` | Questions per client address (nginx rate: `r/s` or `r/m`) |
+| `RATE_LIMIT_CHAT_BURST` | `5` | Extra questions let through at once before the rate applies |
+| `RATE_LIMIT_CHAT_CONNECTIONS` | `2` | Questions in progress at the same time |
+| `RATE_LIMIT_UPLOAD` | `6r/m` | Uploads per client address |
+| `RATE_LIMIT_UPLOAD_BURST` | `3` | Extra uploads let through at once |
+
+The key is the address nginx sees. Behind an ingress or load balancer (CWYD-7; `real_ip` is
+CWYD-20) that is the
+proxy, so every user shares one limit: the web server then needs `real_ip_header
+X-Forwarded-For` with `set_real_ip_from` listing only the trusted proxy CIDRs (never
+`0.0.0.0/0`, or clients can spoof the header). That is not configured here. Requests in
+[`docs/http/rate-limit.http`](docs/http/rate-limit.http); real output in
+[`docs/evidence/CWYD-18-rate-limit.md`](docs/evidence/CWYD-18-rate-limit.md).
 
 ## Troubleshooting
 

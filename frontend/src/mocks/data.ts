@@ -22,6 +22,8 @@ export const MESSAGES = {
   insufficientEvidence:
     'Not enough evidence in your documents to answer this question. Rephrase the question or upload a document that covers it.',
   chatTimeout: 'The answer took too long. Your question was kept: try again.',
+  // nginx's own body (frontend/nginx/default.conf.template, DOM-27), not the API's.
+  rateLimited: 'Too many requests. Try again in a minute.',
 } as const
 
 /** Lower-cased extension without the dot; '' when the name has none. */

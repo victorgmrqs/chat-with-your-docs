@@ -18,6 +18,12 @@ ARG UPGRADE_EPOCH
 USER root
 RUN apk upgrade --no-cache
 USER 101
+# Rate limits (CWYD-18): substituted into the template at start; override them at run time.
+ENV RATE_LIMIT_CHAT=10r/m \
+    RATE_LIMIT_CHAT_BURST=5 \
+    RATE_LIMIT_CHAT_CONNECTIONS=2 \
+    RATE_LIMIT_UPLOAD=6r/m \
+    RATE_LIMIT_UPLOAD_BURST=3
 COPY nginx/default.conf.template /etc/nginx/templates/default.conf.template
 COPY --from=build /app/dist /usr/share/nginx/html
 EXPOSE 8080
