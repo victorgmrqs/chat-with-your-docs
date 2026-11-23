@@ -98,6 +98,10 @@ All notable changes to this project are documented here. The format follows
 
 ### Maintenance
 
+- The backend dev dependencies declare `httpx2==2.16.0`, the client Starlette's TestClient uses,
+  instead of `httpx`; `httpx2` was already installed through the provider SDKs, so no
+  package version changed and `httpx` stays as a runtime transitive dependency
+  ([CWYD-26](https://goncalvesmarques.atlassian.net/browse/CWYD-26)).
 - AI-assisted development foundation: workflow configuration, path-scoped rules, 10 curated and
   security-reviewed skills plus 1 original, read-only Postgres and Context7 MCP servers, and protected
   `main`/`development` branches ([CWYD-9](https://goncalvesmarques.atlassian.net/browse/CWYD-9)).
