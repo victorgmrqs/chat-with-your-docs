@@ -131,3 +131,6 @@ All notable changes to this project are documented here. The format follows
   SQL errors propagating), every pytest fixture lives in `tests/conftest.py`, and `.env.example`
   separates the Compose `POSTGRES_*` block from the outside-Compose `DATABASE_URL`
   ([CWYD-13](https://goncalvesmarques.atlassian.net/browse/CWYD-13)).
+- CI fails when a generated testing guide in `.claude/skills/` drifts from its canonical source in
+  `.dev-workflow/generated/skills/` (job `skills drift`, `scripts/check-generated-skills.sh`)
+  ([CWYD-15](https://goncalvesmarques.atlassian.net/browse/CWYD-15)).

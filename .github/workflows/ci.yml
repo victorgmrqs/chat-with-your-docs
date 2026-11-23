@@ -3,6 +3,7 @@
 #
 # changes ─┬─ backend ──┐
 #          └─ frontend ─┴─ image (build + scan, per component) ── publish (GHCR) ─┐
+# skills-drift ───────────────────────────────────────────────────────────────────┤
 #                                                                                 ci-gate
 # Third-party actions are pinned by commit SHA; the comment names the release.
 
@@ -133,6 +134,18 @@ jobs:
           git diff --exit-code -- src/api/schema.d.ts \
             || { echo "::error::src/api/schema.d.ts is stale: regenerate it (README § Development)"; exit 1; }
 
+  skills-drift:
+    name: skills drift
+    # Always runs (no path filter): a few seconds, and ci-gate must see it on every event.
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Generated testing guides match their .claude/skills copies
+        run: scripts/check-generated-skills.sh
+
   image:
     name: image
     needs: [changes, backend, frontend]
@@ -249,7 +262,7 @@ jobs:
 
   ci-gate:
     name: ci-gate
-    needs: [changes, backend, frontend, image, publish]
+    needs: [changes, backend, frontend, skills-drift, image, publish]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

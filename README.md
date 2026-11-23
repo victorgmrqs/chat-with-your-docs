@@ -399,6 +399,7 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 | `changes` | Path filter: `backend/**` and `db/**` select the backend, `frontend/**` the frontend (a change to the workflow selects both) |
 | `backend checks` | The backend lint, typecheck and test commands from [Development](#development), plus a check that `frontend/openapi.json` matches the API |
 | `frontend checks` | The frontend lint, typecheck and test commands from [Development](#development), plus a check that `src/api/schema.d.ts` matches `openapi.json` |
+| `skills drift` | Always runs. Fails when a generated testing guide's copy in `.claude/skills/` drifts from its source ([Skills curation](docs/skills-curation.md#generated-skills)) |
 | `image (<component>)` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
 | `publish (<component>)` | Pushes the scanned image to GHCR (never on pull requests) |
 | `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
