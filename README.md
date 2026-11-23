@@ -60,6 +60,7 @@ Every variable is listed in [`.env.example`](.env.example).
 | `OTEL_TRACES_SAMPLER_ARG` | no (1.0)                 | Share of new traces kept (0-1)                  |
 | `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
 | `PRICE_TABLE_PATH`  | no (`app/prices.yaml`)         | Chat model prices for the estimated cost, relative to `backend/` |
+| `API_DOCS_ENABLED`  | no (true)                      | `false` removes `/docs`, `/redoc` and `/openapi.json` (404); set it in production |
 | `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
 
 `DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
@@ -232,6 +233,22 @@ lost when it restarts. Its OTLP receiver is reachable only from the Compose netw
 - Every request in [`docs/http/observability.http`](docs/http/observability.http) produces one of
   these traces; screenshots of each are in [`docs/evidence/CWYD-12/`](docs/evidence/CWYD-12/).
   Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-22..24).
+
+## Security headers
+
+The web server ([`frontend/nginx/default.conf.template`](frontend/nginx/default.conf.template)) sends
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and
+`X-Frame-Options: DENY` on every response, errors included. The app itself also gets a
+`Content-Security-Policy` that allows only same-origin scripts, styles, fonts and requests and
+forbids framing. API responses under `/api/` do not: JSON needs no CSP, and it would block
+Swagger UI's inline script and CDN assets. Swagger UI is at `http://localhost:8000/docs`;
+through the web server (`/api/docs`) it still asks for `/openapi.json` without the `/api`
+prefix. Check the headers with `curl -I http://localhost:8080/`
+([`docs/http/security.http`](docs/http/security.http)).
+
+The API docs (`/docs`, `/redoc`, `/openapi.json`) are on by default for local and homolog use.
+Production sets `API_DOCS_ENABLED=false`, which makes the three routes return `404`; the
+committed `frontend/openapi.json` export does not depend on them.
 
 ## Troubleshooting
 

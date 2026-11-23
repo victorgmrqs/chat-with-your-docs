@@ -10,6 +10,7 @@ COPY src ./src
 RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:1.31-alpine
+# nginx >= 1.29.3: the template relies on add_header_inherit (CWYD-14).
 # Mainline nginx: the 1.30 stable image still ships nginx with open CVEs (CWYD-6). Then the
 # security fixes not yet in the base image (musl, zlib, expat...; CI passes a daily UPGRADE_EPOCH
 # so the build cache does not keep a stale upgrade layer) and back to its unprivileged user.

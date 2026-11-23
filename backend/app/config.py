@@ -14,7 +14,15 @@ from pydantic_core import ErrorDetails
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Settings(BaseSettings):
+class HttpSettings(BaseSettings):
+    """Read at import time by `create_app`, before the full Settings (database, keys) exist."""
+
+    api_docs_enabled: bool = True  # false removes /docs, /redoc and /openapi.json
+
+    model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
+
+
+class Settings(HttpSettings):
     database_url: PostgresDsn
     chat_provider: Literal["openai", "anthropic"]
     chat_model: str
@@ -51,8 +59,6 @@ class Settings(BaseSettings):
     otel_traces_sampler_arg: float = Field(default=1.0, ge=0, le=1)  # share of traces kept
     capture_content: bool = False  # DOM-22: dev only; content goes to span events
     price_table_path: Path = Path("app/prices.yaml")  # DOM-24, relative to backend/
-
-    model_config = SettingsConfigDict(extra="ignore", env_ignore_empty=True)
 
     @field_validator("database_url")
     @classmethod
