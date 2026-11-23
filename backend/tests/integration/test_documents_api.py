@@ -136,10 +136,11 @@ def test_document_ingestion_content_does_not_match_extension(
 def test_document_ingestion_too_many_pages(documents_client_for: ClientFactory) -> None:
     """DOM-28: a PDF over PDF_MAX_PAGES ends Failed for good; a re-upload is returned as is."""
     client = documents_client_for(pdf_max_pages=2)
+    content = blank_pdf(3)
 
-    accepted = _upload(client, "huge.pdf", blank_pdf(3))
+    accepted = _upload(client, "huge.pdf", content)
     document = client.get(f"/documents/{accepted.json()['id']}").json()
-    again = _upload(client, "huge.pdf", blank_pdf(3))
+    again = _upload(client, "huge.pdf", content)  # same bytes
 
     assert document["status"] == "failed"
     assert document["failure_reason"] == "too_many_pages"
@@ -165,7 +166,8 @@ def test_document_ingestion_client_filename_never_reaches_the_disk(
 ) -> None:
     """DOM-28: the name is metadata; a body over 1 MB spills to an anonymous temporary file."""
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    client = documents_client_for()
+    client = documents_client_for()  # started first: settings read paths relative to backend/
+    monkeypatch.chdir(tmp_path)  # a write relative to the working directory would land here too
     body = b"Reception opens at eight.\n" * 60_000  # ~1.5 MB: spooled to disk by the parser
 
     response = _upload(client, "../../evil-name.txt", body)

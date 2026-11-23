@@ -1,5 +1,11 @@
-import pytest
+import asyncio
+import threading
+from typing import Any
 
+import pytest
+from pypdf import PageObject
+
+from app.adapters import parsers
 from app.adapters.parsers import DocumentParserAdapter, RecursiveTextSplitter
 from app.domain.documents import DocumentFormat, NoExtractableText, Section, TooManyPages
 from tests.factories import blank_pdf, fixture_bytes
@@ -87,3 +93,41 @@ async def test_parse_pdf_at_the_page_limit_is_parsed() -> None:
     )
 
     assert [s.page for s in sections] == [1, 2]
+
+
+async def test_parse_pdf_cancelled_stops_before_the_next_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """DOM-28: the timeout cancels the parse; the worker thread stops at its next page."""
+    in_page, release, finished = threading.Event(), threading.Event(), threading.Event()
+    pages_read: list[int] = []
+
+    def blocking_extract(page: PageObject, *args: Any, **kwargs: Any) -> str:
+        pages_read.append(1)
+        in_page.set()
+        release.wait(5)  # held until the parse has been cancelled
+        return "text"
+
+    real_parse_pdf = parsers._parse_pdf
+
+    def tracked_parse_pdf(*args: Any) -> list[Section]:
+        try:
+            return real_parse_pdf(*args)
+        finally:
+            finished.set()
+
+    monkeypatch.setattr(PageObject, "extract_text", blocking_extract)
+    monkeypatch.setattr(parsers, "_parse_pdf", tracked_parse_pdf)
+    parse = asyncio.create_task(
+        DocumentParserAdapter(max_pdf_pages=500).parse(blank_pdf(3), DocumentFormat.PDF)
+    )
+    await asyncio.to_thread(in_page.wait, 5)
+
+    parse.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await parse
+    release.set()
+    await asyncio.to_thread(finished.wait, 5)
+
+    assert finished.is_set()
+    assert len(pages_read) == 1  # pages 2 and 3 were never read

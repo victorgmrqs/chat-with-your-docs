@@ -19,7 +19,8 @@ Inputs, generated in the scratchpad and never committed:
 - `long.pdf`: the 2-page `expense-policy.pdf` fixture repeated to 300 pages (69 662 bytes).
 
 Script: `curl -F file=@...` against each API, then `GET /documents/{id}` until the status leaves
-`indexing` (fields filtered to filename, status, failure and `can_retry`).
+`indexing` (fields filtered to filename, status, failure and `can_retry`). The `202` bodies of
+the last two uploads were cut to 80 characters by the script; their polled result follows.
 
 ```text
 ### Renamed binary: PNG bytes saved as report.pdf

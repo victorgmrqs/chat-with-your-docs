@@ -333,3 +333,13 @@ async def test_index_pdf_parse_over_the_time_budget_fails_permanently() -> None:
     assert "took too long" in (document.failure_message or "")
     assert document.can_retry is False
     assert parser.cancelled is True  # DOM-28: the parse is cancelled, not left running
+
+
+async def test_index_text_is_not_bound_by_the_pdf_parse_timeout() -> None:
+    """DOM-28: PDF_PARSE_TIMEOUT_SECONDS applies to PDFs only."""
+    repository = InMemoryDocumentRepository()
+    service = make_ingestion(repository, FakeEmbeddings(8), pdf_parse_timeout_seconds=1e-9)
+
+    document = await _upload_and_index(service, "office-handbook.txt")
+
+    assert document.status is DocumentStatus.READY
