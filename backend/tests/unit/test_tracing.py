@@ -45,11 +45,12 @@ def _use_case(
     rerank: bool = False,
     capture_content: bool = False,
     prices: PriceTable = PRICES,
+    reports_usage: bool | Sequence[bool] = True,
 ) -> AnswerQuestion:
     return make_answering(
         FakeRetriever(chunks),
         FakeEmbeddings(8),
-        FakeChatModel(*replies),
+        FakeChatModel(*replies, reports_usage=reports_usage),
         rerank=rerank,
         prices=prices,
         capture_content=capture_content,
@@ -128,8 +129,8 @@ async def test_otel_chat_trace_refusal_without_evidence(spans: InMemorySpanExpor
     root = named[t.CHAT].attributes
     assert root is not None
     assert root[t.OUTCOME] == "refused"
-    assert root[t.GEN_AI_INPUT_TOKENS] == 0
-    assert root[t.COST_USD] == 0.0
+    # No call reported usage: no totals and no cost, never a recorded 0 (DOM-24).
+    assert not {t.GEN_AI_INPUT_TOKENS, t.GEN_AI_OUTPUT_TOKENS, t.COST_USD} & set(root)
 
 
 async def test_otel_no_content_by_default(spans: InMemorySpanExporter) -> None:
@@ -221,6 +222,42 @@ async def test_otel_unpriced_model_records_no_cost(spans: InMemorySpanExporter) 
     assert t.COST_USD not in root  # DOM-24: unknown, never a wrong number
     assert root[t.GEN_AI_INPUT_TOKENS] == 100
     assert answer.usage == (FakeChatModel.USAGE_PER_CALL,)
+
+
+async def test_otel_no_usage_no_cost(spans: InMemorySpanExporter) -> None:
+    """CWYD-27 (DOM-24): a provider that returns no usage metadata records no tokens and no
+    cost on the step or the question, never 0."""
+    use_case = _use_case([LIMIT], ANSWERED, reports_usage=False)
+
+    answer = await use_case.answer(OWNER, QUESTION)
+
+    assert answer.outcome.value == "answered"
+    for span in spans.get_finished_spans():
+        recorded = set(_attrs(span))
+        assert not any(key.startswith("gen_ai.usage.") for key in recorded), span.name
+        assert t.COST_USD not in recorded, span.name
+
+
+async def test_otel_call_without_usage_is_left_out_of_the_totals(
+    spans: InMemorySpanExporter,
+) -> None:
+    """CWYD-27 (DOM-24): only calls that reported usage count toward the question's totals."""
+    use_case = make_answering(
+        FakeRetriever([LIMIT]),
+        FakeEmbeddings(8),
+        # The rerank call reports no usage; the answer call does.
+        FakeChatModel(RerankDraft(source_ids=["S1"]), ANSWERED, reports_usage=[False, True]),
+        rerank=True,
+        prices=PRICES,
+    )
+
+    await use_case.answer(OWNER, QUESTION)
+
+    named = _by_name(spans)
+    assert t.GEN_AI_INPUT_TOKENS not in _attrs(named[t.RERANK])
+    root = _attrs(named[t.CHAT])
+    assert root[t.GEN_AI_INPUT_TOKENS] == 100  # the answer call only
+    assert root[t.COST_USD] == 0.00014
 
 
 async def test_otel_ingest_trace_success(spans: InMemorySpanExporter) -> None:

@@ -55,7 +55,10 @@
   `ingest.document` sit inside FastAPI's native HTTP span (`FastAPI(telemetry=...)` in
   `app/main.py` excludes `/health*`). `ChatModelPort.generate` and `RerankerPort.rerank` return
   `Generation(value, usage)`; `TokenUsage` / `PriceTable` in `app/domain/usage.py`, loaded from
-  `app/prices.yaml` (`PRICE_TABLE_PATH`) by `app/adapters/price_table.py`. Rules DOM-22..24.
+  `app/prices.yaml` (`PRICE_TABLE_PATH`, default resolved from the package) by
+  `app/adapters/price_table.py`. Rules DOM-22..24. Hardening (CWYD-27): FastAPI telemetry logs
+  off; `configure_tracing` installs a no-op propagator (client `traceparent`/`baggage` ignored);
+  the root span records token totals and cost only when some call reported usage.
   Tests read spans from an in-memory exporter.
 - Schema: Alembic, hand-written revisions in `migrations/versions/` (`target_metadata = None`;
   never edit an applied revision, add a new one). The image runs `alembic upgrade head` before

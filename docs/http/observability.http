@@ -40,7 +40,8 @@ Content-Type: application/json
 {"question": "What is the monthly coworking reimbursement limit?"}
 
 ### 3. Refusal: 200 outcome "insufficient_evidence". Jaeger: app.outcome=refused; with no
-### evidence past the relevance gate there is no answer_generation span (no model call).
+### evidence past the relevance gate there is no answer_generation span (no model call), and
+### rag.chat has no gen_ai.usage.* and no app.cost.usd (unknown, never 0; CWYD-27).
 POST {{api}}/chat
 Content-Type: application/json
 

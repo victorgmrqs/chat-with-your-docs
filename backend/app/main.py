@@ -91,14 +91,15 @@ def create_app(
     docs = http.api_docs_enabled
 
     # FastAPI's native telemetry adds the HTTP server span (the trace root, route and status)
-    # and operation spans around our pipeline spans whenever a tracer provider is set. It
-    # records exceptions by type only, like ours (DOM-22).
+    # and operation spans around our pipeline spans whenever a tracer provider is set. Spans
+    # record exceptions by type only, like ours; its log signal is off because those records
+    # carry exception messages and stack traces (DOM-22, CWYD-27).
     app = FastAPI(
         title="Chat With Your Docs API",
         lifespan=lifespan,
         # None also drops /docs and /redoc; app.openapi() still builds the schema for the export.
         openapi_url="/openapi.json" if docs else None,
-        telemetry={"exclude": _is_health_probe},
+        telemetry={"exclude": _is_health_probe, "logs": False},
     )
 
     def loaded_settings() -> Settings | None:

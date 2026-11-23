@@ -75,3 +75,13 @@ Content-Type: application/json
 
 ### Reranker: set RERANK_ENABLED=true, `docker compose up -d backend`, repeat the first request:
 ### 200 with "reranked": true (false if the reranker call failed and the fused order was used).
+
+### otel_ignores_client_traceparent (CWYD-27): 400 empty_question (no provider call), and the
+### trace in `docker compose logs backend` (OTEL_TRACES_EXPORTER=console) has a new trace_id,
+### not 4bf92f3577b34da6a3ce929d0e0e4736, and no parent: client trace context is ignored.
+POST {{api}}/chat
+Content-Type: application/json
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+tracestate: vendor=client
+
+{"question": "   "}

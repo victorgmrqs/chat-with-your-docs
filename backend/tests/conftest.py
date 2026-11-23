@@ -7,7 +7,9 @@ from typing import Any
 import pytest
 from alembic import command
 from fastapi.testclient import TestClient
-from opentelemetry import trace
+from opentelemetry import _logs, trace
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter, SimpleLogRecordProcessor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
@@ -46,6 +48,25 @@ def _span_exporter() -> InMemorySpanExporter:
     provider.add_span_processor(SimpleSpanProcessor(exporter))  # synchronous: spans visible at once
     trace.set_tracer_provider(provider)
     return exporter
+
+
+@pytest.fixture(scope="session")
+def _log_exporter() -> InMemoryLogRecordExporter:
+    """Process-wide logger provider, so FastAPI's native telemetry would have somewhere to
+    export logs (set_logger_provider is accepted only once)."""
+    exporter = InMemoryLogRecordExporter()  # type: ignore[no-untyped-call]  # SDK class has no annotated __init__
+    provider = LoggerProvider()
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    _logs.set_logger_provider(provider)
+    return exporter
+
+
+@pytest.fixture
+def exported_logs(_log_exporter: InMemoryLogRecordExporter) -> Iterator[InMemoryLogRecordExporter]:
+    """Log records exported during this test only."""
+    _log_exporter.clear()
+    yield _log_exporter
+    _log_exporter.clear()
 
 
 @pytest.fixture
