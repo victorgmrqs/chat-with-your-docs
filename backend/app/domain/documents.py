@@ -1,4 +1,4 @@
-"""Documents, chunks and the ingestion rules (DOM-01..06 in docs/domain-context.md)."""
+"""Documents, chunks and the ingestion rules (DOM-01..06, DOM-25..26 in docs/domain-context.md)."""
 
 import uuid
 from dataclasses import dataclass
@@ -25,8 +25,15 @@ class DocumentStatus(StrEnum):
 
 
 class FailureReason(StrEnum):
-    NO_EXTRACTABLE_TEXT = "no_extractable_text"  # permanent
+    NO_EXTRACTABLE_TEXT = "no_extractable_text"  # permanent: depends on the file
     INDEXING_FAILED = "indexing_failed"  # transient: a re-upload indexes again
+    PROVIDER_MISCONFIGURED = "provider_misconfigured"  # DOM-25: fixed by the operator, retryable
+
+
+# DOM-04: failures that do not depend on the file; re-uploading the same file indexes it again.
+RETRYABLE_FAILURES = frozenset(
+    {FailureReason.INDEXING_FAILED, FailureReason.PROVIDER_MISCONFIGURED}
+)
 
 
 FAILURE_MESSAGES: dict[FailureReason, str] = {  # DOM-03: distinct, actionable messages
@@ -36,6 +43,10 @@ FAILURE_MESSAGES: dict[FailureReason, str] = {  # DOM-03: distinct, actionable m
     ),
     FailureReason.INDEXING_FAILED: (
         "Indexing failed for a temporary reason. Upload the same file again to retry."
+    ),
+    FailureReason.PROVIDER_MISCONFIGURED: (  # DOM-25
+        "The embeddings provider rejected the configured API key or model. Ask the operator "
+        "to check OPENAI_API_KEY and EMBEDDING_MODEL, then upload the same file again."
     ),
 }
 
@@ -57,6 +68,9 @@ class UnsupportedFormat(DomainError):
 class FileTooLarge(DomainError):
     code = "file_too_large"
 
+    def __init__(self, limit_mb: int) -> None:
+        super().__init__(f"The file is larger than {limit_mb} MB. Upload a smaller file.")
+
 
 class EmptyFile(DomainError):
     code = "empty_file"
@@ -71,6 +85,20 @@ class DocumentNotFound(DomainError):
 
 class NoExtractableText(DomainError):
     code = FailureReason.NO_EXTRACTABLE_TEXT.value
+
+
+class EmbeddingDimensionMismatch(DomainError):
+    """DOM-26: EMBEDDING_DIMENSIONS differs from the database's vector column."""
+
+    code = "embedding_dimension_mismatch"
+
+    def __init__(self, configured: int, stored: int) -> None:
+        super().__init__(
+            "Uploads are unavailable: the embedding settings do not match the database. "
+            "Ask the operator to check EMBEDDING_DIMENSIONS."
+        )
+        self.configured = configured
+        self.stored = stored
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,9 +121,9 @@ class Document:
 
     @property
     def can_retry(self) -> bool:
-        """DOM-04: only transient failures are indexed again on re-upload."""
+        """DOM-04: only failures that do not depend on the file are indexed again on re-upload."""
 
-        return self.failure_reason is FailureReason.INDEXING_FAILED
+        return self.failure_reason in RETRYABLE_FAILURES
 
 
 @dataclass(frozen=True, slots=True)

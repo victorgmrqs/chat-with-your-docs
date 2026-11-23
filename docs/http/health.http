@@ -12,6 +12,9 @@ GET {{api}}/health
 
 ### Readiness: 200 {"status":"ready","pgvector":"0.8.7"}
 # 503 {"detail":"database unavailable"} after `docker compose stop db`
+# 503 {"detail":"embedding dimension mismatch"} with EMBEDDING_DIMENSIONS=768 in .env (CWYD-16,
+# DOM-26); the backend logs once at startup, at ERROR:
+# "Embedding dimension mismatch: EMBEDDING_DIMENSIONS=768, chunks.embedding=1536"
 GET {{api}}/health/ready
 
 ### Same API through the frontend's nginx proxy (/api prefix stripped): 200 {"status":"ok"}

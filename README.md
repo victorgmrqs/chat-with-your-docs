@@ -39,10 +39,10 @@ Every variable is listed in [`.env.example`](.env.example).
 | `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                            |
 | `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
 | `MAX_UPLOAD_MB`     | no (10)                        | Upload size limit; larger files get `413`       |
-| `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration |
+| `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration; a mismatch fails readiness and uploads (`503`) |
 | `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
 | `CHUNK_OVERLAP`     | no (150)                       | Overlap between chunks; smaller than the size   |
-| `DEFAULT_OWNER_ID`  | no                             | Owner of every document (single-user MVP)       |
+| `DEFAULT_OWNER_ID`  | no (`00000000-0000-0000-0000-000000000001`) | Owner of every document (single-user MVP) |
 | `QUESTION_MAX_CHARS` | no (2000)                     | Longer questions get `400 question_too_long`    |
 | `RETRIEVAL_CANDIDATES` | no (20)                     | Chunks per search branch (vector, full-text)    |
 | `RETRIEVAL_TOP_K`   | no (6)                         | Fused chunks considered for the prompt; at most twice `RETRIEVAL_CANDIDATES` |
@@ -81,8 +81,9 @@ curl -s localhost:8080/api/health     # same API through the frontend's nginx pr
 ```
 
 `/health/ready` answers `503` with `database unavailable` or `pgvector extension missing` when
-the dependency is not there. Compose uses it as the backend health check, and the frontend only
-starts once the backend is ready.
+the dependency is not there, and with `embedding dimension mismatch` when `EMBEDDING_DIMENSIONS`
+differs from the database's `vector` column (also logged once at startup). Compose uses it as
+the backend health check, and the frontend only starts once the backend is ready.
 
 ## Documents
 
@@ -98,21 +99,25 @@ curl -s localhost:8000/documents        # all documents, newest first
 
 - Uploading the same file again returns the existing document (`200`) instead of a copy. A
   document that failed with `indexing_failed` (temporary: embeddings provider or database
-  unavailable) is indexed again on re-upload (`202`, same id); `no_extractable_text` (for
-  example a scanned PDF) needs another version of the file.
+  unavailable) or `provider_misconfigured` (the provider rejected `OPENAI_API_KEY` or
+  `EMBEDDING_MODEL`: fix the setting first) is indexed again on re-upload (`202`, same id);
+  `no_extractable_text` (for example a scanned PDF) needs another version of the file. Each
+  document's `can_retry` says which case applies (DOM-04).
 - Errors use one envelope, `{"code": "...", "detail": "...", "request_id": "..."}`:
   `415 unsupported_type`, `413 file_too_large`, `400 empty_file`, `404 document_not_found`,
-  `503 database_unavailable`, and `500 internal_error` with a generic message for any unexpected
-  failure. `request_id` equals the `X-Request-ID` header every response carries; quote it when
-  reporting a problem (see [Tracing](#tracing)). Through the frontend proxy
+  `503 database_unavailable`, `503 embedding_dimension_mismatch`, and `500 internal_error` with
+  a generic message for any unexpected failure. `request_id` equals the `X-Request-ID` header
+  every response carries; quote it when reporting a problem (see [Tracing](#tracing)). Through the frontend proxy
   (`:8080/api`), nginx accepts bodies up to 11 MB (10 MB plus multipart overhead) and answers
   larger ones with `413 file_too_large` (`code` and `detail` only: the request never reaches the
   API, so there is no `request_id` or trace); raise `client_max_body_size` in
-  `frontend/nginx/default.conf.template` together with `MAX_UPLOAD_MB`.
+  `frontend/nginx/default.conf.template` together with `MAX_UPLOAD_MB`. Called directly
+  (`:8000`), the API itself cuts off bodies over `MAX_UPLOAD_MB` plus 1 MB without reading them
+  (`413 file_too_large` with `request_id`).
 - A document left `indexing` by a restart is marked `failed` / `indexing_failed` when the API
   starts; upload it again to retry.
 - Every request in [`docs/http/documents.http`](docs/http/documents.http) can be run against the
-  Compose stack. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-01..06).
+  Compose stack. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-01..06, DOM-25..26).
 
 ## Chat
 

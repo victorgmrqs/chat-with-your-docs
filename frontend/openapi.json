@@ -101,6 +101,10 @@
       },
       "DocumentResponse": {
         "properties": {
+          "can_retry": {
+            "title": "Can Retry",
+            "type": "boolean"
+          },
           "chunk_count": {
             "title": "Chunk Count",
             "type": "integer"
@@ -164,6 +168,7 @@
           "status",
           "failure_reason",
           "failure_message",
+          "can_retry",
           "chunk_count",
           "created_at",
           "updated_at"
@@ -220,7 +225,8 @@
       "FailureReason": {
         "enum": [
           "no_extractable_text",
-          "indexing_failed"
+          "indexing_failed",
+          "provider_misconfigured"
         ],
         "title": "FailureReason",
         "type": "string"
@@ -611,7 +617,7 @@
                 }
               }
             },
-            "description": "`file_too_large` (MAX_UPLOAD_MB)"
+            "description": "`file_too_large` (MAX_UPLOAD_MB; a body over it plus 1 MB is cut off unread)"
           },
           "415": {
             "content": {
@@ -641,7 +647,7 @@
                 }
               }
             },
-            "description": "`database_unavailable`"
+            "description": "`database_unavailable` or `embedding_dimension_mismatch`"
           }
         },
         "summary": "Upload Document",
@@ -738,7 +744,7 @@
     },
     "/health/ready": {
       "get": {
-        "description": "Readiness: the database answers and pgvector is installed.",
+        "description": "Readiness: the database answers, pgvector is installed and the embedding column has\nthe configured dimension (DOM-26).",
         "operationId": "ready_health_ready_get",
         "responses": {
           "200": {
@@ -759,7 +765,7 @@
                 }
               }
             },
-            "description": "`database unavailable` or `pgvector extension missing`"
+            "description": "`database unavailable`, `pgvector extension missing` or `embedding dimension mismatch`"
           }
         },
         "summary": "Ready",

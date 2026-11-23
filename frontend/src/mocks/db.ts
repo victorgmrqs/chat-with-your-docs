@@ -1,22 +1,25 @@
 // In-memory stand-in for the backend's document state, shared by the default handlers.
 // Indexing is simulated by time: a document uploaded now becomes `ready` after `indexingMs`.
 // Browser demo triggers (VITE_API_MOCKS=true): a filename containing "scanned" fails with
-// no_extractable_text; one containing "flaky" fails with indexing_failed on its first upload.
+// no_extractable_text; one containing "flaky" fails with indexing_failed and one containing
+// "misconfigured" with provider_misconfigured on its first upload (both retryable, DOM-04).
 import type { DocumentResponse } from '@/api/client'
 
 import { documentResponse, extensionOf, MESSAGES } from './data'
 
-type Outcome = 'ready' | 'no_extractable_text' | 'indexing_failed'
+type Outcome = 'ready' | 'no_extractable_text' | 'indexing_failed' | 'provider_misconfigured'
 
 const FAILURE_MESSAGE: Record<Exclude<Outcome, 'ready'>, string> = {
   no_extractable_text: MESSAGES.noExtractableText,
   indexing_failed: MESSAGES.indexingFailed,
+  provider_misconfigured: MESSAGES.providerMisconfigured,
 }
 
 /** First upload of a file: the demo triggers in its name decide how indexing ends. */
 function outcomeFor(filename: string): Outcome {
   if (filename.includes('scanned')) return 'no_extractable_text'
   if (filename.includes('flaky')) return 'indexing_failed'
+  if (filename.includes('misconfigured')) return 'provider_misconfigured'
   return 'ready'
 }
 
@@ -75,10 +78,10 @@ export const mockDb = {
     const existing = stored.find(
       (entry) => entry.document.filename === filename && entry.document.size_bytes === size,
     )
-    if (existing && existing.document.failure_reason !== 'indexing_failed') {
+    if (existing && !existing.document.can_retry) {
       return { document: existing.document, queued: false }
     }
-    // A transient failure succeeds on the second upload.
+    // A retryable failure succeeds on the second upload.
     const outcome = existing ? 'ready' : outcomeFor(filename)
     const document = documentResponse({
       ...(existing && { id: existing.document.id }), // DOM-04: same document, indexed again
@@ -104,6 +107,7 @@ function finish(entry: StoredDocument) {
           status: 'failed',
           failure_reason: entry.outcome,
           failure_message: FAILURE_MESSAGE[entry.outcome],
+          can_retry: entry.outcome !== 'no_extractable_text', // DOM-04
           updated_at,
         }
 }

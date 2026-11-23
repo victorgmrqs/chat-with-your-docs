@@ -21,16 +21,18 @@ from app.domain.answers import (
 from app.domain.documents import (
     DocumentNotFound,
     DomainError,
+    EmbeddingDimensionMismatch,
     EmptyFile,
     FileTooLarge,
     UnsupportedFormat,
 )
 
-_STATUS_BY_ERROR: dict[type[DomainError], int] = {
+STATUS_BY_ERROR: dict[type[DomainError], int] = {
     UnsupportedFormat: status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
     FileTooLarge: status.HTTP_413_CONTENT_TOO_LARGE,
     EmptyFile: status.HTTP_400_BAD_REQUEST,
     DocumentNotFound: status.HTTP_404_NOT_FOUND,
+    EmbeddingDimensionMismatch: status.HTTP_503_SERVICE_UNAVAILABLE,  # DOM-26: operator fix
     EmptyQuestion: status.HTTP_400_BAD_REQUEST,
     QuestionTooLong: status.HTTP_400_BAD_REQUEST,
     NoReadyDocuments: status.HTTP_409_CONFLICT,
@@ -62,7 +64,8 @@ DATABASE_UNAVAILABLE: dict[int | str, dict[str, object]] = {
 }
 
 
-def _error(request: Request, code: str, detail: str, status_code: int) -> JSONResponse:
+def error_json(request: Request, code: str, detail: str, status_code: int) -> JSONResponse:
+    """The {code, detail, request_id} envelope with the X-Request-ID header."""
     request_id = request_id_of(request)  # made here if the request-id middleware did not run
     body = DomainErrorResponse(code=code, detail=detail, request_id=request_id)
     return JSONResponse(
@@ -75,13 +78,13 @@ def _error(request: Request, code: str, detail: str, status_code: int) -> JSONRe
 def register_error_handlers(app: FastAPI) -> None:
     @app.exception_handler(DomainError)
     async def domain_error(request: Request, exc: DomainError) -> JSONResponse:
-        status_code = _STATUS_BY_ERROR.get(type(exc), status.HTTP_400_BAD_REQUEST)
-        return _error(request, exc.code, exc.message, status_code)
+        status_code = STATUS_BY_ERROR.get(type(exc), status.HTTP_400_BAD_REQUEST)
+        return error_json(request, exc.code, exc.message, status_code)
 
     @app.exception_handler(DatabaseUnavailable)
     async def database_unavailable(request: Request, exc: DatabaseUnavailable) -> JSONResponse:
         # Short, stable text: never the driver message (backend-api rule).
-        return _error(
+        return error_json(
             request,
             "database_unavailable",
             "database unavailable",
@@ -99,6 +102,6 @@ def register_error_handlers(app: FastAPI) -> None:
             request_id,
             extra={"request_id": request_id, "error_type": error_type},
         )
-        return _error(
+        return error_json(
             request, "internal_error", INTERNAL_ERROR_DETAIL, status.HTTP_500_INTERNAL_SERVER_ERROR
         )

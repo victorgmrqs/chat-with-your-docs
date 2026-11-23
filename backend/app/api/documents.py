@@ -21,6 +21,7 @@ class DocumentResponse(BaseModel):
     status: DocumentStatus
     failure_reason: FailureReason | None
     failure_message: str | None
+    can_retry: bool  # DOM-04: uploading the same file again indexes it
     chunk_count: int
     created_at: datetime
     updated_at: datetime
@@ -35,6 +36,7 @@ class DocumentResponse(BaseModel):
             status=document.status,
             failure_reason=document.failure_reason,
             failure_message=document.failure_message,
+            can_retry=document.can_retry,
             chunk_count=document.chunk_count,
             created_at=document.created_at,
             updated_at=document.updated_at,
@@ -50,9 +52,13 @@ class DocumentResponse(BaseModel):
             "description": "Same file already uploaded: the existing document, not re-indexed",
         },
         status.HTTP_400_BAD_REQUEST: error_response("`empty_file`"),
-        status.HTTP_413_CONTENT_TOO_LARGE: error_response("`file_too_large` (MAX_UPLOAD_MB)"),
+        status.HTTP_413_CONTENT_TOO_LARGE: error_response(
+            "`file_too_large` (MAX_UPLOAD_MB; a body over it plus 1 MB is cut off unread)"
+        ),
         status.HTTP_415_UNSUPPORTED_MEDIA_TYPE: error_response("`unsupported_type`"),
-        **DATABASE_UNAVAILABLE,
+        status.HTTP_503_SERVICE_UNAVAILABLE: error_response(
+            "`database_unavailable` or `embedding_dimension_mismatch`"
+        ),
     },
 )
 async def upload_document(

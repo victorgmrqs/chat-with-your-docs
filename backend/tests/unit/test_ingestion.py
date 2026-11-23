@@ -9,13 +9,20 @@ from app.domain.documents import (
     Document,
     DocumentNotFound,
     DocumentStatus,
+    EmbeddingDimensionMismatch,
     EmptyFile,
     FailureReason,
     FileTooLarge,
     UnsupportedFormat,
 )
-from tests.factories import MAX_UPLOAD_BYTES, fixture_bytes, make_ingestion
-from tests.fakes import FailingEmbeddings, FakeEmbeddings, InMemoryDocumentRepository
+from tests.factories import EMBEDDING_DIMENSIONS, MAX_UPLOAD_BYTES, fixture_bytes, make_ingestion
+from tests.fakes import (
+    FailingEmbeddings,
+    FakeEmbeddings,
+    FixedVectorSchema,
+    InMemoryDocumentRepository,
+    MisconfiguredEmbeddings,
+)
 
 OWNER = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
@@ -137,6 +144,70 @@ async def test_index_embedding_failure_fails_transiently() -> None:
     assert document.status is DocumentStatus.FAILED
     assert document.failure_reason is FailureReason.INDEXING_FAILED
     assert document.can_retry is True
+
+
+async def test_ingestion_provider_misconfigured() -> None:
+    """DOM-25: a rejected key or model is not reported as a temporary failure."""
+    document = await _upload_and_index(
+        _service(InMemoryDocumentRepository(), MisconfiguredEmbeddings()), "expense-policy.pdf"
+    )
+
+    assert document.status is DocumentStatus.FAILED
+    assert document.failure_reason is FailureReason.PROVIDER_MISCONFIGURED
+    assert document.failure_message is not None
+    assert "OPENAI_API_KEY" in document.failure_message
+    assert document.can_retry is True
+
+
+async def test_ingestion_provider_misconfigured_retry() -> None:
+    """DOM-04: once the operator fixes the settings, re-uploading the same file indexes it."""
+    repository = InMemoryDocumentRepository()
+    failed = await _upload_and_index(
+        _service(repository, MisconfiguredEmbeddings()), "office-handbook.txt"
+    )
+
+    fixed = _service(repository)
+    document = await _upload_and_index(fixed, "office-handbook.txt")
+
+    assert document.id == failed.id
+    assert document.status is DocumentStatus.READY
+    assert document.failure_reason is None
+
+
+async def test_ingestion_dimension_mismatch_rejects_the_upload_before_storing() -> None:
+    repository = InMemoryDocumentRepository()
+    service = make_ingestion(
+        repository, FakeEmbeddings(8), schema=FixedVectorSchema(EMBEDDING_DIMENSIONS + 1)
+    )
+
+    with pytest.raises(EmbeddingDimensionMismatch) as raised:
+        await service.upload(OWNER, "office-handbook.txt", fixture_bytes("office-handbook.txt"))
+
+    assert (raised.value.configured, raised.value.stored) == (
+        EMBEDDING_DIMENSIONS,
+        EMBEDDING_DIMENSIONS + 1,
+    )
+    assert repository.documents == {}
+
+
+async def test_check_embedding_dimensions_remembers_a_match() -> None:
+    schema = FixedVectorSchema(EMBEDDING_DIMENSIONS)
+    service = make_ingestion(InMemoryDocumentRepository(), FakeEmbeddings(8), schema=schema)
+
+    await service.check_embedding_dimensions()
+    await service.check_embedding_dimensions()
+
+    assert schema.reads == 1
+
+
+async def test_check_embedding_dimensions_unreadable_column_does_not_block() -> None:
+    schema = FixedVectorSchema(None)
+    service = make_ingestion(InMemoryDocumentRepository(), FakeEmbeddings(8), schema=schema)
+
+    await service.check_embedding_dimensions()
+    await service.check_embedding_dimensions()
+
+    assert schema.reads == 2  # not remembered: read again until it can be checked
 
 
 async def test_get_document_of_another_owner_raises_not_found() -> None:

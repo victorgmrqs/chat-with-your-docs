@@ -5,7 +5,9 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from app.adapters.postgres_documents import PostgresDocumentRepository
+from app.application.ports import DocumentNotIndexing
 from app.domain.documents import (
+    RETRYABLE_FAILURES,
     Chunk,
     Document,
     DocumentStatus,
@@ -126,15 +128,32 @@ async def test_store_chunks_and_mark_ready_persists_chunks_and_sets_ready(
     assert {c.owner_id for c in await stored_chunks(engine, document.id)} == {document.owner_id}
 
 
-async def test_store_chunks_and_mark_ready_replaces_previous_chunks(
+async def test_store_chunks_and_mark_ready_on_a_ready_document_keeps_its_chunks(
     repository: PostgresDocumentRepository, engine: AsyncEngine
 ) -> None:
     document, chunks, embeddings = await _indexed_input(repository)
     await repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
 
-    await repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
+    with pytest.raises(DocumentNotIndexing):
+        await repository.store_chunks_and_mark_ready(document.id, chunks[:1], embeddings[:1])
 
     assert len(await _locations(engine, document.id)) == 2
+
+
+async def test_ingestion_ready_requires_indexing(
+    repository: PostgresDocumentRepository, engine: AsyncEngine
+) -> None:
+    """DOM-02 in the adapter: a Ready update on a non-indexing document stores no chunks."""
+    document, chunks, embeddings = await _indexed_input(repository)
+    await repository.mark_failed(document.id, FailureReason.INDEXING_FAILED)
+
+    with pytest.raises(DocumentNotIndexing):
+        await repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
+
+    stored = await repository.get(document.owner_id, document.id)
+    assert stored is not None
+    assert stored.status is DocumentStatus.FAILED
+    assert await _locations(engine, document.id) == []
 
 
 async def test_store_chunks_and_mark_ready_rejects_mismatched_embeddings(
@@ -162,11 +181,12 @@ async def test_mark_failed_records_the_reason(repository: PostgresDocumentReposi
     assert stored.failure_reason is FailureReason.NO_EXTRACTABLE_TEXT
 
 
-async def test_mark_indexing_clears_the_failure_reason(
-    repository: PostgresDocumentRepository,
+@pytest.mark.parametrize("reason", sorted(RETRYABLE_FAILURES))
+async def test_mark_indexing_clears_a_retryable_failure_reason(
+    repository: PostgresDocumentRepository, reason: FailureReason
 ) -> None:
     document, _ = await repository.create_or_get(make_document())
-    await repository.mark_failed(document.id, FailureReason.INDEXING_FAILED)
+    await repository.mark_failed(document.id, reason)
 
     retried = await repository.mark_indexing(document.id)
 
@@ -175,13 +195,16 @@ async def test_mark_indexing_clears_the_failure_reason(
     assert retried.failure_reason is None
 
 
-async def test_mark_indexing_only_retries_a_transient_failure(
+async def test_mark_indexing_only_retries_a_retryable_failure(
     repository: PostgresDocumentRepository,
 ) -> None:
     document, chunks, embeddings = await _indexed_input(repository)
     await repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
+    permanent, _ = await repository.create_or_get(make_document())
+    await repository.mark_failed(permanent.id, FailureReason.NO_EXTRACTABLE_TEXT)
 
     assert await repository.mark_indexing(document.id) is None  # Ready: nothing to retry
+    assert await repository.mark_indexing(permanent.id) is None  # depends on the file
     assert await repository.mark_indexing(uuid.uuid4()) is None
 
 

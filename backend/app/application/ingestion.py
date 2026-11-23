@@ -11,14 +11,17 @@ from app.application import telemetry as t
 from app.application.ports import (
     DocumentParser,
     DocumentRepository,
+    EmbeddingMisconfigured,
     EmbeddingPort,
     TextSplitter,
+    VectorSchemaPort,
 )
 from app.domain.documents import (
     ACCEPTED_FORMATS_HINT,
     Document,
     DocumentNotFound,
     DocumentStatus,
+    EmbeddingDimensionMismatch,
     EmptyFile,
     FailureReason,
     FileTooLarge,
@@ -31,9 +34,12 @@ from app.domain.documents import (
 logger = logging.getLogger(__name__)
 
 
-def _log_failure(message: str, document: Document, exc: Exception) -> None:
+def _log_failure(
+    message: str, document: Document, exc: Exception, level: int = logging.WARNING
+) -> None:
     error_type = type(exc).__name__
-    logger.warning(
+    logger.log(
+        level,
         message,
         document.id,
         error_type,
@@ -54,14 +60,30 @@ class IngestionService:
         parser: DocumentParser,
         splitter: TextSplitter,
         embeddings: EmbeddingPort,
+        schema: VectorSchemaPort,
         *,
         max_upload_bytes: int,
+        embedding_dimensions: int,
     ) -> None:
         self._repository = repository
         self._parser = parser
         self._splitter = splitter
         self._embeddings = embeddings
+        self._schema = schema
         self._max_upload_bytes = max_upload_bytes
+        self._embedding_dimensions = embedding_dimensions
+        self._dimensions_match = False
+
+    async def check_embedding_dimensions(self) -> None:
+        """DOM-26: raises EmbeddingDimensionMismatch when EMBEDDING_DIMENSIONS differs from
+        the stored column. A match is remembered: the column only changes with a migration,
+        and the setting with a restart. Raises DatabaseUnavailable."""
+        if self._dimensions_match:
+            return
+        stored = await self._schema.embedding_dimensions()
+        if stored is not None and stored != self._embedding_dimensions:
+            raise EmbeddingDimensionMismatch(self._embedding_dimensions, stored)
+        self._dimensions_match = stored is not None
 
     async def upload(self, owner_id: uuid.UUID, filename: str, content: bytes) -> UploadResult:
         """Validate and register the file; indexing itself runs later through `index`."""
@@ -70,8 +92,8 @@ class IngestionService:
         if not content:
             raise EmptyFile(f"The file is empty. {ACCEPTED_FORMATS_HINT}")
         if len(content) > self._max_upload_bytes:
-            limit_mb = self._max_upload_bytes // (1024 * 1024)
-            raise FileTooLarge(f"The file is larger than {limit_mb} MB. Upload a smaller file.")
+            raise FileTooLarge(self._max_upload_bytes // (1024 * 1024))
+        await self.check_embedding_dimensions()  # DOM-26: before anything is stored
 
         now = datetime.now(UTC)
         candidate = Document(
@@ -90,7 +112,7 @@ class IngestionService:
         document, created = await self._repository.create_or_get(candidate)
         if created:
             return UploadResult(document, needs_indexing=True)
-        if document.can_retry:  # DOM-04: only a transient failure is indexed again
+        if document.can_retry:  # DOM-04: only a failure that does not depend on the file
             retried = await self._repository.mark_indexing(document.id)
             if retried is not None:
                 return UploadResult(retried, needs_indexing=True)
@@ -149,6 +171,16 @@ class IngestionService:
         except NoExtractableText:
             # A permanent property of the file, not a system failure: the parse span shows it.
             return FailureReason.NO_EXTRACTABLE_TEXT
+        except EmbeddingMisconfigured as exc:
+            # DOM-25: the operator must fix the key or model; every upload fails until then.
+            _log_failure(
+                "Embeddings provider rejected the configuration for document %s: %s",
+                document,
+                exc,
+                logging.ERROR,
+            )
+            t.mark_failed(t.current_span(), exc)
+            return FailureReason.PROVIDER_MISCONFIGURED
         except Exception as exc:
             # DOM-03: anything else (provider or storage) is transient. Log the type only:
             # driver errors can carry statement parameters, i.e. chunk text.

@@ -185,6 +185,21 @@ describe('App', () => {
     expect(within(sidebar()).queryByText(MESSAGES.indexingFailed)).not.toBeInTheDocument()
   })
 
+  it('shows the provider_misconfigured message and retries it once the operator fixed it', async () => {
+    const { user, sidebar, upload } = setup()
+
+    await upload(file('Benefits_misconfigured.pdf'))
+    await within(sidebar()).findByText('0 ready · 1 indexing')
+    mockDb.finishIndexing()
+    expect(await within(sidebar()).findByText(MESSAGES.providerMisconfigured)).toBeInTheDocument()
+
+    await user.click(within(sidebar()).getByRole('button', { name: 'Retry' }))
+
+    expect(await within(sidebar()).findByText('0 ready · 1 indexing')).toBeInTheDocument()
+    mockDb.finishIndexing()
+    expect(await within(sidebar()).findByText('1 ready')).toBeInTheDocument()
+  })
+
   it('does not claim an empty collection while the list is loading', async () => {
     // Held until the end of the test: a request left pending would stall the next test's.
     let answer = () => {}

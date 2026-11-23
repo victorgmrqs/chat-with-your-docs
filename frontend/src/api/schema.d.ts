@@ -97,7 +97,8 @@ export interface paths {
         };
         /**
          * Ready
-         * @description Readiness: the database answers and pgvector is installed.
+         * @description Readiness: the database answers, pgvector is installed and the embedding column has
+         *     the configured dimension (DOM-26).
          */
         get: operations["ready_health_ready_get"];
         put?: never;
@@ -153,6 +154,8 @@ export interface components {
         DocumentFormat: "pdf" | "md" | "txt";
         /** DocumentResponse */
         DocumentResponse: {
+            /** Can Retry */
+            can_retry: boolean;
             /** Chunk Count */
             chunk_count: number;
             /**
@@ -206,7 +209,7 @@ export interface components {
          * FailureReason
          * @enum {string}
          */
-        FailureReason: "no_extractable_text" | "indexing_failed";
+        FailureReason: "no_extractable_text" | "indexing_failed" | "provider_misconfigured";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -443,7 +446,7 @@ export interface operations {
                     "application/json": components["schemas"]["DomainErrorResponse"];
                 };
             };
-            /** @description `file_too_large` (MAX_UPLOAD_MB) */
+            /** @description `file_too_large` (MAX_UPLOAD_MB; a body over it plus 1 MB is cut off unread) */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -470,7 +473,7 @@ export interface operations {
                     "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
-            /** @description `database_unavailable` */
+            /** @description `database_unavailable` or `embedding_dimension_mismatch` */
             503: {
                 headers: {
                     [name: string]: unknown;
@@ -568,7 +571,7 @@ export interface operations {
                     "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
-            /** @description `database unavailable` or `pgvector extension missing` */
+            /** @description `database unavailable`, `pgvector extension missing` or `embedding dimension mismatch` */
             503: {
                 headers: {
                     [name: string]: unknown;

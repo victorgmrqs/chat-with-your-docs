@@ -65,6 +65,14 @@ All notable changes to this project are documented here. The format follows
   `API_DOCS_ENABLED=false` (default `true`; production sets it) makes `/docs`, `/redoc` and
   `/openapi.json` return `404`
   ([CWYD-14](https://goncalvesmarques.atlassian.net/browse/CWYD-14)).
+- Ingestion refuses work it cannot finish: an `EMBEDDING_DIMENSIONS` that differs from the
+  database's `vector` column fails readiness and uploads (`503 embedding_dimension_mismatch`,
+  nothing stored) and is logged once at startup, instead of failing every upload as retryable;
+  the API itself cuts off request bodies over `MAX_UPLOAD_MB` plus 1 MB with `413 file_too_large`
+  (not only nginx); a Ready transition from any state other than `indexing` writes no chunks; and a
+  rejected embeddings API key or model ends `provider_misconfigured`, retryable by re-upload once
+  the operator fixes it, with Retry offered in the UI (documents now carry `can_retry`). The README
+  shows the `DEFAULT_OWNER_ID` default ([CWYD-16](https://goncalvesmarques.atlassian.net/browse/CWYD-16)).
 
 ### Maintenance
 

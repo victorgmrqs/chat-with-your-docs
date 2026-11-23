@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.adapters.postgres_connection import DatabaseUnavailable
 from app.api.dependencies import get_container
 from app.composition import Container
+from app.domain.documents import EmbeddingDimensionMismatch
 
 router = APIRouter(tags=["health"], prefix="/health")
 
@@ -34,17 +35,25 @@ async def health() -> HealthResponse:
     responses={
         status.HTTP_503_SERVICE_UNAVAILABLE: {
             "model": ErrorResponse,
-            "description": "`database unavailable` or `pgvector extension missing`",
+            "description": (
+                "`database unavailable`, `pgvector extension missing` or "
+                "`embedding dimension mismatch`"
+            ),
         }
     },
 )
 async def ready(container: Annotated[Container, Depends(get_container)]) -> ReadinessResponse:
-    """Readiness: the database answers and pgvector is installed."""
+    """Readiness: the database answers, pgvector is installed and the embedding column has
+    the configured dimension (DOM-26)."""
     try:
         version = await container.readiness.pgvector_version()
+        if version is None:
+            raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "pgvector extension missing")
+        await container.ingestion.check_embedding_dimensions()
     except DatabaseUnavailable as exc:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "database unavailable") from exc
-
-    if version is None:
-        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "pgvector extension missing")
+    except EmbeddingDimensionMismatch as exc:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE, "embedding dimension mismatch"
+        ) from exc
     return ReadinessResponse(status="ready", pgvector=version)
