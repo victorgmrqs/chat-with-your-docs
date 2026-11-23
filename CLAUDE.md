@@ -59,6 +59,8 @@ docker compose up --build --wait   # full stack: web :8080, API :8000, db :5432
 - `.claude/rules/` are path-scoped. `.claude/skills/` are pinned, edited third-party copies
   (curation and security review: `docs/skills-curation.md`); this file, the rules and each
   skill's "Project overrides" win over upstream skill text.
+- Security review extra (project override): reviews touching security load `owasp-security`
+  (plus `differential-review` for history and blast radius); `/code-review-task` stays the gate.
 - MCP (`.mcp.json`, versions pinned there): read-only Postgres for local dev, Context7 for
   current library docs. Prefer Context7 over memory for LangChain, FastAPI, Vite and shadcn.
 
