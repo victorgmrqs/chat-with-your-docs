@@ -20,6 +20,10 @@ LIMIT = "Coworking reimbursement is limited to US$ 250 per month per employee."
 OFFICE = "The office opens at 8 a.m. and closes at 7 p.m. on business days."
 
 
+async def _vectors(embeddings: EmbeddingPort, texts: list[str]) -> list[list[float]]:
+    return (await embeddings.embed_documents(texts)).value
+
+
 async def _ready_document(
     repository: PostgresDocumentRepository,
     embeddings: EmbeddingPort,
@@ -30,7 +34,7 @@ async def _ready_document(
         make_document(sha256=uuid.uuid4().hex * 2, **overrides)
     )
     chunks = build_chunks(document, [Section(text=t, page=i + 1) for i, t in enumerate(texts)])
-    vectors = await embeddings.embed_documents([c.embedding_text for c in chunks])
+    vectors = await _vectors(embeddings, [c.embedding_text for c in chunks])
     await repository.store_chunks_and_mark_ready(document.id, chunks, vectors)
     return document
 
@@ -42,7 +46,7 @@ async def test_rag_hybrid_exact_term(
     embeddings = FakeEmbeddings(EMBEDDING_DIMENSIONS)
     owner = uuid.uuid4()
     await _ready_document(repository, embeddings, [APPROVAL, LIMIT, OFFICE], owner_id=owner)
-    [query_vector] = await embeddings.embed_documents(["US$ 250"])
+    [query_vector] = await _vectors(embeddings, ["US$ 250"])
 
     results = await retriever.search(owner, "US$ 250", query_vector, candidates=20, limit=6)
 
@@ -58,7 +62,7 @@ async def test_hybrid_search_natural_question_matches_any_term(
     owner = uuid.uuid4()
     await _ready_document(repository, embeddings, [APPROVAL, LIMIT, OFFICE], owner_id=owner)
     question = "Do I need my manager's approval for coworking?"
-    [query_vector] = await embeddings.embed_documents([question])
+    [query_vector] = await _vectors(embeddings, [question])
 
     results = await retriever.search(owner, question, query_vector, candidates=20, limit=6)
 
@@ -73,8 +77,8 @@ async def test_hybrid_search_reports_cosine_similarity(
     embeddings = KeywordEmbeddings(EMBEDDING_DIMENSIONS)
     owner = uuid.uuid4()
     document = await _ready_document(repository, embeddings, [LIMIT, OFFICE], owner_id=owner)
-    [query_vector] = await embeddings.embed_documents(
-        [build_chunks(document, [Section(text=LIMIT, page=1)])[0].embedding_text]
+    [query_vector] = await _vectors(
+        embeddings, [build_chunks(document, [Section(text=LIMIT, page=1)])[0].embedding_text]
     )
 
     results = await retriever.search(owner, "reimbursement", query_vector, candidates=20, limit=6)
@@ -100,7 +104,7 @@ async def test_hybrid_search_only_ready_documents_of_owner(
             ),
             {"id": failed.id},
         )
-    [query_vector] = await embeddings.embed_documents(["US$ 250"])
+    [query_vector] = await _vectors(embeddings, ["US$ 250"])
 
     results = await retriever.search(owner, "US$ 250", query_vector, candidates=20, limit=6)
 
@@ -119,7 +123,7 @@ async def test_hybrid_search_requires_document_owner_too(
             text("UPDATE chunks SET owner_id = :owner WHERE document_id = :id"),
             {"owner": owner, "id": foreign.id},
         )
-    [query_vector] = await embeddings.embed_documents(["US$ 250"])
+    [query_vector] = await _vectors(embeddings, ["US$ 250"])
 
     results = await retriever.search(owner, "US$ 250", query_vector, candidates=20, limit=6)
 
@@ -132,7 +136,7 @@ async def test_hybrid_search_respects_limit(
     embeddings = FakeEmbeddings(EMBEDDING_DIMENSIONS)
     owner = uuid.uuid4()
     await _ready_document(repository, embeddings, [APPROVAL, LIMIT, OFFICE], owner_id=owner)
-    [query_vector] = await embeddings.embed_documents(["coworking"])
+    [query_vector] = await _vectors(embeddings, ["coworking"])
 
     results = await retriever.search(owner, "coworking", query_vector, candidates=20, limit=2)
 

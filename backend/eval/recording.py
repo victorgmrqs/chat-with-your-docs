@@ -1,10 +1,12 @@
-"""RetrieverPort decorator that keeps what the last search returned (questions run one by one)."""
+"""Port decorators that keep what the current question used (questions run one by one)."""
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 
-from app.application.ports import RetrieverPort
+from app.application.ports import EmbeddingPort, Generation, RetrieverPort
 from app.domain.answers import RetrievedChunk
+from app.domain.usage import TokenUsage
 
 
 class RecordingRetriever:
@@ -31,3 +33,30 @@ class RecordingRetriever:
             owner_id, query_text, query_embedding, candidates=candidates, limit=limit
         )
         return self.last
+
+
+class RecordingEmbeddings:
+    """Keeps the embedding usage since the last reset (DOM-24). The chat usage comes from
+    LangChain's callback; embeddings call the provider SDK directly, so they are recorded here."""
+
+    def __init__(self, inner: EmbeddingPort) -> None:
+        self._inner = inner
+        self.usage: list[TokenUsage] = []
+
+    def reset(self) -> None:
+        self.usage = []
+
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
+        generation = await self._inner.embed_documents(texts)
+        self.usage.extend(generation.usage)
+        return generation
+
+
+@dataclass(frozen=True, slots=True)
+class Recorders:
+    retrieval: RecordingRetriever
+    embeddings: RecordingEmbeddings
+
+    def reset(self) -> None:
+        self.retrieval.reset()
+        self.embeddings.reset()

@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import logging
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -35,6 +36,7 @@ from app.domain.documents import (
     clean_filename,
     detect_format,
 )
+from app.domain.usage import PriceTable, TokenUsage
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,26 @@ def _log_failure(
         document.id,
         error_type,
         extra={"document_id": str(document.id), "error_type": error_type},
+    )
+
+
+def _log_indexed(
+    document: Document, chunks: int, usage: Sequence[TokenUsage], cost: float | None
+) -> None:
+    """DOM-24: ids and numbers only; tokens and cost are null when unknown, never 0."""
+    tokens = sum(u.input_tokens for u in usage) if usage else None
+    logger.info(
+        "Indexed document %s: %d chunks, %s embedding tokens, estimated cost %s USD",
+        document.id,
+        chunks,
+        tokens,
+        cost,
+        extra={
+            "document_id": str(document.id),
+            "chunks": chunks,
+            "embedding_tokens": tokens,
+            "cost_usd": cost,
+        },
     )
 
 
@@ -70,6 +92,7 @@ class IngestionService:
         max_upload_bytes: int,
         embedding_dimensions: int,
         pdf_parse_timeout_seconds: float,
+        prices: PriceTable | None = None,
     ) -> None:
         self._repository = repository
         self._parser = parser
@@ -79,6 +102,7 @@ class IngestionService:
         self._max_upload_bytes = max_upload_bytes
         self._embedding_dimensions = embedding_dimensions
         self._pdf_parse_timeout = pdf_parse_timeout_seconds
+        self._prices = prices or PriceTable()  # empty: no cost recorded (DOM-24)
         self._dimensions_match = False
 
     async def check_embedding_dimensions(self) -> None:
@@ -169,12 +193,17 @@ class IngestionService:
                 pieces = await asyncio.to_thread(self._splitter.split, sections)
                 chunks = build_chunks(document, pieces)
                 span.set_attribute(t.DOCUMENT_CHUNKS, len(chunks))
-            with t.step(t.INGEST_EMBED, {t.EMBEDDED_TEXTS: len(chunks)}):
-                embeddings = await self._embeddings.embed_documents(
+            with t.step(t.INGEST_EMBED, {t.EMBEDDED_TEXTS: len(chunks)}) as span:
+                embedding = await self._embeddings.embed_documents(
                     [c.embedding_text for c in chunks]
                 )
+                t.record_usage(span, embedding.usage)  # DOM-24
+                cost = t.record_cost(span, self._prices, embedding.usage)
             with t.step(t.INGEST_STORE, {t.DOCUMENT_CHUNKS: len(chunks)}):
-                await self._repository.store_chunks_and_mark_ready(document.id, chunks, embeddings)
+                await self._repository.store_chunks_and_mark_ready(
+                    document.id, chunks, embedding.value
+                )
+            _log_indexed(document, len(chunks), embedding.usage, cost)
             return None
         except NoExtractableText:
             # A permanent property of the file, not a system failure: the parse span shows it.

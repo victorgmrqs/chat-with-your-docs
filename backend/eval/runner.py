@@ -27,7 +27,7 @@ from app.config import Settings
 from app.domain.documents import DomainError
 from app.domain.usage import PriceTable
 from eval.dataset import Dataset, EvalConfig, GoldenQuestion
-from eval.recording import RecordingRetriever
+from eval.recording import Recorders, RecordingEmbeddings, RecordingRetriever
 from eval.scoring import ChunkRef, Observation, QuestionScore, Summary, score_question, summarize
 
 _OWNER_NAMESPACE = uuid.UUID("6f1c7d2e-2a39-4c55-9a43-0c7e1f3b9d10")
@@ -110,19 +110,31 @@ def build_eval_container(
     settings: Settings,
     embeddings: EmbeddingPort | None = None,
     chat: ChatModelPort | None = None,
-) -> tuple[Container, RecordingRetriever]:
-    """The application's own wiring, with the retriever recorded for scoring."""
-    recorder: RecordingRetriever | None = None
+) -> tuple[Container, Recorders]:
+    """The application's own wiring, with the retriever and the embeddings recorded."""
+    retrieval: RecordingRetriever | None = None
+    embedding: RecordingEmbeddings | None = None
 
-    def record(inner: RetrieverPort) -> RetrieverPort:
-        nonlocal recorder
-        recorder = RecordingRetriever(inner)
-        return recorder
+    def record_retrieval(inner: RetrieverPort) -> RetrieverPort:
+        nonlocal retrieval
+        retrieval = RecordingRetriever(inner)
+        return retrieval
 
-    container = build_container(settings, embeddings, chat, wrap_retriever=record)
-    if recorder is None:  # build_container always builds the retriever
-        raise RuntimeError("build_container did not call wrap_retriever")
-    return container, recorder
+    def record_embeddings(inner: EmbeddingPort) -> EmbeddingPort:
+        nonlocal embedding
+        embedding = RecordingEmbeddings(inner)
+        return embedding
+
+    container = build_container(
+        settings,
+        embeddings,
+        chat,
+        wrap_retriever=record_retrieval,
+        wrap_embeddings=record_embeddings,
+    )
+    if retrieval is None or embedding is None:  # build_container always builds both
+        raise RuntimeError("build_container did not call wrap_retriever and wrap_embeddings")
+    return container, Recorders(retrieval, embedding)
 
 
 async def index_documents(
@@ -143,7 +155,7 @@ async def index_documents(
 
 async def ask(
     answering: AnswerQuestion,
-    recorder: RecordingRetriever,
+    recorder: Recorders,
     owner_id: uuid.UUID,
     question: GoldenQuestion,
     prices: PriceTable,
@@ -163,11 +175,12 @@ async def ask(
             answer, error = None, type(exc).__name__
     latency_ms = (time.perf_counter() - started) * 1000
 
-    usage = token_usage(callback)
+    # DOM-24: chat calls from LangChain's callback, the query embedding from its recorder.
+    usage = [*token_usage(callback), *recorder.embeddings.usage]
     return Observation(
         question_id=question.id,
         outcome=answer.outcome.value if answer else None,
-        retrieved=[ChunkRef.of(chunk) for chunk in recorder.last],
+        retrieved=[ChunkRef.of(chunk) for chunk in recorder.retrieval.last],
         cited=[ChunkRef.of(source.passage) for source in answer.sources] if answer else [],
         latency_ms=latency_ms,
         input_tokens=sum(u.input_tokens for u in usage),
@@ -181,7 +194,7 @@ async def ask(
 
 async def _run_collection(
     container: Container,
-    recorder: RecordingRetriever,
+    recorder: Recorders,
     dataset: Dataset,
     owner_id: uuid.UUID,
     documents_dir: Path,
@@ -198,7 +211,7 @@ async def _run_collection(
 
 async def evaluate(
     container: Container,
-    recorder: RecordingRetriever,
+    recorder: Recorders,
     dataset: Dataset,
     config: EvalConfig,
     documents_dir: Path,

@@ -37,7 +37,7 @@ def _summary_rows(summary: Summary) -> list[tuple[str, str]]:
         ("Citation recall (mean)", _pct(summary.mean_citation_recall)),
         ("Latency p50 / p95", f"{summary.latency_p50_ms:.0f} / {summary.latency_p95_ms:.0f} ms"),
         ("Tokens in / out", f"{summary.input_tokens} / {summary.output_tokens}"),
-        ("Chat cost", _usd(summary.cost_usd)),
+        ("Cost (chat + query embedding)", _usd(summary.cost_usd)),
         ("Answers using the reranked order", str(summary.reranked)),
     ]
 
@@ -69,7 +69,7 @@ def _adversarial_section(run: AdversarialRun) -> list[str]:
         f"| Injection resistance | {_pct(summary.injection_resistance)} |",
         f"| Outcome accuracy | {_pct(summary.outcome_accuracy)} |",
         f"| Citation validity | {_pct(summary.citation_validity)} |",
-        f"| Chat cost | {_usd(summary.cost_usd)} |",
+        f"| Cost (chat + query embedding) | {_usd(summary.cost_usd)} |",
         "",
         *_document_rows(run.documents),
         "",

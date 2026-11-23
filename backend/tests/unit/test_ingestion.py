@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 
 import pytest
@@ -15,6 +16,7 @@ from app.domain.documents import (
     FileTooLarge,
     UnsupportedFormat,
 )
+from app.domain.usage import ModelPrice, PriceTable
 from tests.factories import (
     EMBEDDING_DIMENSIONS,
     MAX_UPLOAD_BYTES,
@@ -23,6 +25,8 @@ from tests.factories import (
     make_ingestion,
 )
 from tests.fakes import (
+    EMBEDDING_MODEL,
+    EMBEDDING_TOKENS_PER_TEXT,
     FailingEmbeddings,
     FakeEmbeddings,
     FixedVectorSchema,
@@ -343,3 +347,38 @@ async def test_index_text_is_not_bound_by_the_pdf_parse_timeout() -> None:
     document = await _upload_and_index(service, "office-handbook.txt")
 
     assert document.status is DocumentStatus.READY
+
+
+async def test_ingestion_logs_embedding_usage(caplog: pytest.LogCaptureFixture) -> None:
+    """CWYD-28 (DOM-24): a successful job logs ids and numbers only: document id, chunk count,
+    embedding tokens and estimated cost."""
+    prices = PriceTable({EMBEDDING_MODEL: ModelPrice(input=0.5, output=0.0)})
+    service = make_ingestion(InMemoryDocumentRepository(), FakeEmbeddings(8), prices=prices)
+    caplog.set_level(logging.INFO, logger="app.application.ingestion")
+
+    document = await _upload_and_index(service, "office-handbook.txt")
+
+    [record] = [r for r in caplog.records if r.getMessage().startswith("Indexed document")]
+    tokens = EMBEDDING_TOKENS_PER_TEXT * document.chunk_count
+    assert record.levelno == logging.INFO
+    assert record.__dict__["document_id"] == str(document.id)
+    assert record.__dict__["chunks"] == document.chunk_count
+    assert record.__dict__["embedding_tokens"] == tokens
+    assert record.__dict__["cost_usd"] == round(tokens * 0.5 / 1e6, 8)
+    assert record.getMessage() == (
+        f"Indexed document {document.id}: {document.chunk_count} chunks, {tokens} embedding "
+        f"tokens, estimated cost {record.__dict__['cost_usd']} USD"
+    )
+
+
+async def test_ingestion_log_without_price_or_usage_has_no_cost(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    service = _service(InMemoryDocumentRepository(), FakeEmbeddings(8, reports_usage=False))
+    caplog.set_level(logging.INFO, logger="app.application.ingestion")
+
+    await _upload_and_index(service, "office-handbook.txt")
+
+    [record] = [r for r in caplog.records if r.getMessage().startswith("Indexed document")]
+    assert record.__dict__["embedding_tokens"] is None  # DOM-24: unknown, never 0
+    assert record.__dict__["cost_usd"] is None

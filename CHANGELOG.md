@@ -56,6 +56,13 @@ All notable changes to this project are documented here. The format follows
   Every response carries `X-Request-ID`, error bodies carry the same `request_id`, and an
   unexpected failure answers `500 internal_error`
   ([CWYD-12](https://goncalvesmarques.atlassian.net/browse/CWYD-12)).
+- Embedding calls report their token usage: each indexing job records the embedding model,
+  tokens and estimated cost on `ingest.embed` and logs them with the document id and chunk count,
+  and a question's token totals and cost include its query embedding. The OpenAI embeddings
+  adapter calls the SDK's `embeddings.create` directly (batched, same retries and error mapping),
+  `text-embedding-3-small` is priced in `app/prices.yaml`, and the RAG evaluation counts each
+  question's query embedding
+  ([CWYD-28](https://goncalvesmarques.atlassian.net/browse/CWYD-28)).
 
 ### Security
 

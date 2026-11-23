@@ -30,15 +30,26 @@ from app.domain.documents import (
 )
 from app.domain.usage import TokenUsage
 
+EMBEDDING_MODEL = "fake-embedding-model"
+EMBEDDING_TOKENS_PER_TEXT = 5
+
+
+def embedding_usage(texts: Sequence[str]) -> tuple[TokenUsage, ...]:
+    """What the embedding fakes report for one call (DOM-24): a fixed count per text."""
+    return (TokenUsage(EMBEDDING_MODEL, EMBEDDING_TOKENS_PER_TEXT * len(texts), 0),)
+
 
 class FakeEmbeddings:
-    """Deterministic vectors derived from the text hash: same text, same vector."""
+    """Deterministic vectors derived from the text hash: same text, same vector.
+    Reports `embedding_usage(texts)`, as a provider would, unless `reports_usage=False`."""
 
-    def __init__(self, dimensions: int) -> None:
+    def __init__(self, dimensions: int, *, reports_usage: bool = True) -> None:
         self.dimensions = dimensions
+        self._reports_usage = reports_usage
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._vector(text) for text in texts]
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
+        usage = embedding_usage(texts) if self._reports_usage else ()
+        return Generation([self._vector(text) for text in texts], usage)
 
     def _vector(self, text: str) -> list[float]:
         seed = hashlib.sha256(text.encode()).digest()
@@ -48,14 +59,14 @@ class FakeEmbeddings:
 class FailingEmbeddings:
     """Provider still failing after the adapter's retries (transient failure)."""
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
         raise EmbeddingUnavailable("provider unavailable")
 
 
 class MisconfiguredEmbeddings:
     """Provider rejecting the API key or model (DOM-25): fails until the settings change."""
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
         raise EmbeddingMisconfigured("AuthenticationError")
 
 
@@ -184,13 +195,14 @@ class KeywordEmbeddings:
     """Bag-of-words vectors: cosine similarity reflects shared words (no semantics).
 
     Lets tests exercise the vector branch and the relevance gate without a provider.
+    Reports `embedding_usage(texts)`.
     """
 
     def __init__(self, dimensions: int) -> None:
         self.dimensions = dimensions
 
-    async def embed_documents(self, texts: Sequence[str]) -> list[list[float]]:
-        return [self._vector(text) for text in texts]
+    async def embed_documents(self, texts: Sequence[str]) -> Generation[list[list[float]]]:
+        return Generation([self._vector(text) for text in texts], embedding_usage(texts))
 
     def _vector(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions

@@ -20,7 +20,7 @@ from eval.dataset import EvalConfig, EvalPlan, load_dataset
 from eval.report import write_run
 from eval.runner import RunResult, build_eval_container, evaluate
 from tests.factories import BACKEND_DIR, EMBEDDING_DIMENSIONS, FIXTURES_DIR, make_settings
-from tests.fakes import KeywordEmbeddings, prompt_sources
+from tests.fakes import EMBEDDING_TOKENS_PER_TEXT, KeywordEmbeddings, prompt_sources
 
 pytestmark = pytest.mark.integration
 
@@ -101,3 +101,10 @@ def test_rag_eval_two_source_question_end_to_end(result: RunResult) -> None:
     assert score.hit_at_k == 1.0
     assert score.citation_valid is True
     assert score.citation_recall == 1.0
+
+
+def test_rag_eval_counts_each_query_embedding(result: RunResult) -> None:
+    """CWYD-28 (DOM-24): each question's tokens include its own query embedding, also when the
+    chat call failed afterwards; indexing tokens are not charged to any question. The oracle
+    chat reports no usage, so the query embedding is all there is."""
+    assert {s.input_tokens for s in result.scores} == {EMBEDDING_TOKENS_PER_TEXT}
