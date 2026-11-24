@@ -1,0 +1,11 @@
+# Reviewed advisories the `dependency audit` CI job accepts (CWYD-24). Format and rules
+# (reason + ignoreUntil at most 90 days, enforced by scripts/check-audit-ignores.py):
+# README § "CI and images" → "Accepting a reviewed advisory".
+
+[[IgnoredVulns]]
+id = "GHSA-g3hv-75wg-m249"
+ignoreUntil = 2027-02-21
+reason = """minimatch 10.2.6 (glob amplification DoS) is a dev-only dependency of the shadcn CLI \
+(shadcn -> ts-morph -> @ts-morph/common): it runs only when a developer adds a component, on \
+patterns we write, and is not in any image. Ends when @ts-morph/common moves to minimatch >= 11.0.1 \
+(Dependabot npm PR) or on the date above. Accepted in CWYD-24."""

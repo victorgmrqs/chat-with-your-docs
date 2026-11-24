@@ -109,6 +109,11 @@ All notable changes to this project are documented here. The format follows
   no token totals and no cost instead of 0; and the default `PRICE_TABLE_PATH` resolves from the
   app package, whatever the working directory
   ([CWYD-27](https://goncalvesmarques.atlassian.net/browse/CWYD-27)).
+- Dependabot keeps Python, npm, Docker base images and GitHub Actions up to date (weekly, PRs
+  against `development`), and CI fails on any known-vulnerable Python or npm dependency unless the
+  advisory is accepted in `osv-scanner.toml` with a reason and an expiry of at most 90 days;
+  actions stay pinned by commit SHA, now enforced by the repository policy
+  ([CWYD-24](https://goncalvesmarques.atlassian.net/browse/CWYD-24)).
 
 ### Maintenance
 
