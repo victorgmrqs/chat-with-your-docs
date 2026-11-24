@@ -460,6 +460,14 @@ reason = "Why it does not apply or cannot be fixed yet, and what ends the except
 date more than 90 days away, or a date already past. An exception therefore expires, and the
 advisory has to be fixed or reviewed again.
 
+## Homelab deploy
+
+The published images also run on a private K3s homelab (homolog only), synced by Argo CD from a
+separate GitOps repository. Topology, deploy, verification and rollback:
+[docs/deploy/homelab.md](docs/deploy/homelab.md). `scripts/smoke.sh <base-url>` runs the end-to-end
+smoke test (readiness, upload, two-source answer, insufficient evidence) against any environment,
+including `http://localhost:8080`.
+
 ## Repository layout
 
 ```
@@ -471,7 +479,9 @@ frontend/   React + Vite SPA (src/components, src/hooks, src/api with the genera
             (scripts/tokens), dev-only design preview (preview.html), nginx template, Dockerfile
 db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
             by Compose also creates the read-only role for the Postgres MCP server
-docs/       design tokens, domain rules, HTTP evidence, evaluation reports, curation notes
+docs/       design tokens, domain rules, HTTP evidence, evaluation reports, curation notes,
+            homelab deploy runbook (deploy/)
+scripts/    end-to-end smoke test (smoke.sh), CI helpers, docs guard
 .github/    CI workflow (checks, image scan, GHCR publishing) and the PR template
 compose.yaml, .env.example
 ```
