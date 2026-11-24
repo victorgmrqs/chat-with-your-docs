@@ -1,0 +1,12 @@
+# CWYD-7 — homelab homolog deploy (docs/deploy/homelab.md). Needs the LAN or the tailnet.
+# Only what is specific to the homelab lives here. The end-to-end flow (upload, two-source answer,
+# insufficient evidence) is `scripts/smoke.sh https://cwyd-homolog.lab.goncalvesmarques.com`;
+# to send those requests by hand, set `@web` in documents.http and chat.http to the URL below.
+
+@web = https://cwyd-homolog.lab.goncalvesmarques.com/api
+
+### Readiness through the ingress and the frontend nginx: 200 {"status":"ready","pgvector":"0.8.7"}
+GET {{web}}/health/ready
+
+### HTTPS and HSTS: 200 with Strict-Transport-Security (set by ingress-nginx on TLS hosts)
+HEAD https://cwyd-homolog.lab.goncalvesmarques.com/

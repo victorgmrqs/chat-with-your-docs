@@ -63,6 +63,10 @@ All notable changes to this project are documented here. The format follows
   `text-embedding-3-small` is priced in `app/prices.yaml`, and the RAG evaluation counts each
   question's query embedding
   ([CWYD-28](https://goncalvesmarques.atlassian.net/browse/CWYD-28)).
+- Homolog deploy on the homelab through Argo CD (own pgvector database, frontend-only Ingress,
+  NetworkPolicies), with the runbook in `docs/deploy/homelab.md` (verification and rollback) and
+  `scripts/smoke.sh`, an end-to-end smoke test for any base URL
+  ([CWYD-7](https://goncalvesmarques.atlassian.net/browse/CWYD-7)).
 
 ### Security
 
