@@ -400,6 +400,7 @@ the gateway address in a local `compose.override.yaml` (never commit it).
 | `backend checks` | The backend lint, typecheck and test commands from [Development](#development), plus a check that `frontend/openapi.json` matches the API |
 | `frontend checks` | The frontend lint, typecheck and test commands from [Development](#development), plus a check that `src/api/schema.d.ts` matches `openapi.json` |
 | `skills drift` | Always runs. Fails when a generated testing guide's copy in `.claude/skills/` drifts from its source ([Skills curation](docs/skills-curation.md#generated-skills)) |
+| `dependency audit` | Always runs. Scans `backend/uv.lock` and `frontend/package-lock.json` with [osv-scanner](https://github.com/google/osv-scanner); any known advisory fails the job unless it was [accepted after review](#accepting-a-reviewed-advisory) |
 | `image (<component>)` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
 | `publish (<component>)` | Pushes the scanned image to GHCR (never on pull requests) |
 | `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
@@ -430,7 +431,34 @@ digest: it is the only immutable reference, since a later rebuild of the same co
 tag, or the daily OS-upgrade refresh) pushes a new image under the same `sha-` tag. A burst of
 pushes to `development` runs only the first and the last commit; the ones in between get no
 images. The *Run workflow* button appears once `ci.yml` is on `main`, the default branch.
-Third-party actions are pinned by commit SHA.
+
+**Supply chain.** Third-party actions are pinned by full commit SHA, with the release in a
+comment, and the repository's Actions policy requires SHA pinning. The audit job downloads the
+osv-scanner release binary and checks it against a SHA-256 pinned in `ci.yml`. That version is
+the one pin Dependabot does not cover: bump it by hand (steps in the `ci.yml` comment).
+Dependabot (`.github/dependabot.yml`) checks uv, npm, Docker base images (Dockerfiles and
+`compose.yaml`) and GitHub Actions every Monday and opens PRs against `development`: minor and
+patch updates grouped into one PR per ecosystem, majors one PR each, each release proposed only
+after Dependabot's default 3-day cooldown. These PRs go through the same checks and review as
+any other. Dependabot *security* updates stay off because they always target `main`; the audit
+job blocks a vulnerable dependency instead. Dependabot reads its configuration from `main`, so
+it starts after the release that brings this file there.
+
+#### Accepting a reviewed advisory
+
+When an advisory cannot be fixed yet (no patched release) or does not apply, add it to
+`osv-scanner.toml` in the same PR that explains why:
+
+```toml
+[[IgnoredVulns]]
+id = "GHSA-xxxx-xxxx-xxxx"          # the ID the audit job printed
+ignoreUntil = 2027-02-01            # at most 90 days away
+reason = "Why it does not apply or cannot be fixed yet, and what ends the exception."
+```
+
+`scripts/check-audit-ignores.py` fails the job when an entry has no reason, no `ignoreUntil`, a
+date more than 90 days away, or a date already past. An exception therefore expires, and the
+advisory has to be fixed or reviewed again.
 
 ## Repository layout
 
