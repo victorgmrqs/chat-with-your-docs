@@ -68,6 +68,14 @@ All notable changes to this project are documented here. The format follows
   `scripts/smoke.sh`, an end-to-end smoke test for any base URL
   ([CWYD-7](https://goncalvesmarques.atlassian.net/browse/CWYD-7)).
 
+### Fixed
+
+- The documents sidebar no longer overflows its column: a long file name widened it past the
+  column (horizontal scroll, clipped counter, button and status chips) and its ellipsis never
+  applied. The column now matches the handoff width (24rem) and shrinks with its content
+  truncated, from desktop down to mobile
+  ([CWYD-29](https://goncalvesmarques.atlassian.net/browse/CWYD-29)).
+
 ### Security
 
 - Every web server response, errors included, carries `X-Content-Type-Options: nosniff`,

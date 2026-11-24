@@ -45,6 +45,22 @@ describe('DocumentSidebar', () => {
     expect(within(row(scanned.filename)).getByText('Failed')).toBeInTheDocument()
   })
 
+  // CWYD-29: jsdom does no layout, so the "fits its column" half is the visual evidence in
+  // docs/evidence/CWYD-29-sidebar.md (Playwright E2E, CWYD-8). This guards the other half: a long
+  // name stays whole in the tooltip next to its status.
+  it('keeps a long file name whole in its tooltip next to the status', () => {
+    const long: DocumentItem = {
+      id: 'e',
+      filename: 'quarterly-employee-benefits-and-cafeteria-menu-overview-2026.txt',
+      status: 'ready',
+    }
+    render(<DocumentSidebar documents={[long]} />)
+
+    const name = screen.getByText(long.filename)
+    expect(name).toHaveAttribute('title', long.filename)
+    expect(within(row(long.filename)).getByText('Ready')).toBeInTheDocument()
+  })
+
   it('offers another upload for a permanent failure', async () => {
     const onUpload = vi.fn()
     const onRemove = vi.fn()

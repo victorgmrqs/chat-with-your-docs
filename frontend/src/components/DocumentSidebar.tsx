@@ -55,9 +55,15 @@ export function DocumentSidebar({
   const hasCitations = citations !== undefined && Object.keys(citations).length > 0
 
   return (
+    // min-w-0: a flex item never shrinks below its min-content width, and a `truncate` file name
+    // still counts its full length there. Without it a long name widens the sidebar past its
+    // column (horizontal scroll, clipped chips) and the ellipsis never applies (CWYD-29).
     <aside
       aria-label="Documents"
-      className={cn('flex flex-1 flex-col gap-5 border-r border-border bg-sidebar px-5 py-6', className)}
+      className={cn(
+        'flex min-w-0 flex-1 flex-col gap-5 border-r border-border bg-sidebar px-5 py-6',
+        className,
+      )}
     >
       <div className="flex items-center gap-2.5">
         <BrandMark />
