@@ -1,6 +1,6 @@
 # Reviewed advisories the `dependency audit` CI job accepts (CWYD-24). Format and rules
 # (reason + ignoreUntil at most 90 days, enforced by scripts/check-audit-ignores.py):
-# README § "CI and images" → "Accepting a reviewed advisory".
+# docs/development.md § "CI and images" → "Accepting a reviewed advisory".
 
 [[IgnoredVulns]]
 id = "GHSA-g3hv-75wg-m249"

@@ -1,4 +1,4 @@
-# Dependabot version updates (CWYD-24); schedule and grouping: README § "CI and images".
+# Dependabot version updates (CWYD-24); schedule and grouping: docs/development.md § "CI and images".
 # Security updates (repository setting) stay off: they always target the default branch (main);
 # the `dependency audit` CI job blocks vulnerable dependencies instead.
 
