@@ -1,0 +1,11 @@
+# Model prices in USD per million tokens (DOM-24), read by the API (estimated cost on each
+# question's trace and each indexing job) and by the RAG evaluation. Matched by prefix of the
+# model name the provider reports (providers add date suffixes); the longest matching prefix wins.
+# A model missing here records no cost, never a wrong number; a question needs both its chat and
+# its embedding model priced to record a cost.
+# Update when models or prices change.
+prices_usd_per_million_tokens:
+  # Chat: snapshot 2026-11-22 (Anthropic API pricing).
+  claude-haiku-5-5: {input: 0.10, output: 0.50}
+  # Embeddings (CWYD-28): OpenAI list price, input tokens only (embeddings have no output).
+  text-embedding-3-small: {input: 0.02, output: 0.0}

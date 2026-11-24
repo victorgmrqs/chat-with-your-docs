@@ -1,0 +1,189 @@
+"""POST /chat end to end: real PostgreSQL, fixture documents, declared LLM fakes.
+
+The expected-evidence cases come from tests/fixtures/rag_cases.json. The chat model is an
+oracle fake: it reads the sources the pipeline actually put in the prompt and cites the ones
+holding the case's expected passages. What is verified is the backend: retrieval surfaces
+those passages from the real database, and citations resolve to the right file and page.
+"""
+
+import json
+from collections.abc import Callable
+from typing import Any
+
+import pytest
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
+
+from app.application import telemetry as t
+from app.application.ports import ChatPrompt
+from app.application.prompts import AnswerDraft
+from app.domain.answers import INSUFFICIENT_EVIDENCE_MESSAGE, ChatModelTimeout, ChatModelUnavailable
+from tests.factories import BACKEND_DIR, ClientFactory
+from tests.fakes import prompt_sources
+
+pytestmark = pytest.mark.integration
+
+CASES = {
+    case["id"]: case
+    for case in json.loads((BACKEND_DIR / "tests/fixtures/rag_cases.json").read_text())["cases"]
+}
+
+
+def _oracle(case: dict[str, Any]) -> Callable[[ChatPrompt], AnswerDraft]:
+    def reply(prompt: ChatPrompt) -> AnswerDraft:
+        sources = prompt_sources(prompt)
+
+        def label_of(phrase: str) -> str | None:
+            return next((label for label, body in sources.items() if phrase in body), None)
+
+        if case["expected_outcome"] == "answered":
+            labels = [label_of(s["passage_contains"]) for s in case["expected_sources"]]
+            answer = " ".join(f"Claim [{label}]." for label in labels if label)
+            return AnswerDraft(outcome="answered", answer=answer, closest_source_id=None)
+        related = case["expected_related_passage"]["passage_contains"]
+        return AnswerDraft(
+            outcome="insufficient_evidence", answer="", closest_source_id=label_of(related)
+        )
+
+    return reply
+
+
+def _cited(body: dict[str, Any]) -> list[tuple[str, int | None]]:
+    return [(s["filename"], s["page"]) for s in body["sources"]]
+
+
+def test_chat_coworking_two_sources(chat_client_for: ClientFactory) -> None:
+    case = CASES["coworking_two_sources"]
+    client = chat_client_for(_oracle(case))
+
+    response = client.post("/chat", json={"question": case["question"]})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["outcome"] == "answered"
+    assert _cited(body) == [(s["filename"], s["page"]) for s in case["expected_sources"]]
+    for source, expected in zip(body["sources"], case["expected_sources"], strict=True):
+        assert expected["passage_contains"] in source["passage"]
+    assert [s["number"] for s in body["sources"]] == [1, 2]
+    assert body["answer"] == "Claim [1]. Claim [2]."
+    assert (body["provider"], body["model"]) == ("fake", "fake-chat-model")
+
+
+def test_chat_contractor_parental_leave_answered(chat_client_for: ClientFactory) -> None:
+    # The fixture states the exclusion, so "contractors are not covered" is a grounded answer.
+    case = CASES["contractor_parental_leave"]
+    client = chat_client_for(_oracle(case))
+
+    body = client.post("/chat", json={"question": case["question"]}).json()
+
+    [expected] = case["expected_sources"]
+    [source] = body["sources"]
+    assert body["outcome"] == "answered"
+    assert (source["filename"], source["page"]) == (expected["filename"], expected["page"])
+    assert expected["heading_contains"] in source["heading"]
+    assert expected["passage_contains"] in source["passage"]
+
+
+def test_chat_uncovered_question_insufficient(chat_client_for: ClientFactory) -> None:
+    case = CASES["leave_split_not_covered"]
+    client = chat_client_for(_oracle(case))
+
+    body = client.post("/chat", json={"question": case["question"]}).json()
+
+    expected = case["expected_related_passage"]
+    assert body["outcome"] == "insufficient_evidence"
+    assert body["answer"] == INSUFFICIENT_EVIDENCE_MESSAGE
+    assert body["sources"] == []
+    assert body["related_passage"]["filename"] == expected["filename"]
+    assert expected["heading_contains"] in body["related_passage"]["heading"]
+    assert expected["passage_contains"] in body["related_passage"]["passage"]
+
+
+def test_chat_exact_term_amount(chat_client_for: ClientFactory) -> None:
+    case = CASES["exact_term_amount"]
+    client = chat_client_for(_oracle(case))
+
+    body = client.post("/chat", json={"question": case["question"]}).json()
+
+    assert body["outcome"] == "answered"
+    assert _cited(body) == [("expense-policy.pdf", 2)]
+
+
+def test_chat_invented_citation_is_not_a_source(chat_client_for: ClientFactory) -> None:
+    invented = AnswerDraft(outcome="answered", answer="Two weeks [S99].", closest_source_id=None)
+    client = chat_client_for(invented)
+
+    response = client.post(
+        "/chat", json={"question": CASES["contractor_parental_leave"]["question"]}
+    )
+
+    assert response.status_code == 200
+    assert response.json()["outcome"] == "insufficient_evidence"
+    assert response.json()["answer"] == INSUFFICIENT_EVIDENCE_MESSAGE  # model text never leaks
+    assert response.json()["sources"] == []
+
+
+def test_chat_provider_timeout_is_technical_failure(chat_client_for: ClientFactory) -> None:
+    client = chat_client_for(ChatModelTimeout())
+
+    response = client.post("/chat", json={"question": "What is the coworking limit?"})
+
+    assert response.status_code == 504
+    assert response.json()["code"] == "chat_timeout"
+
+
+def test_chat_provider_error_is_technical_failure(
+    chat_client_for: ClientFactory, spans: InMemorySpanExporter
+) -> None:
+    client = chat_client_for(ChatModelUnavailable())
+
+    response = client.post("/chat", json={"question": "What is the coworking limit?"})
+
+    assert response.status_code == 502
+    body = response.json()
+    assert body["code"] == "chat_unavailable"
+    # DOM-23: the id in the error body finds the failed trace.
+    assert body["request_id"] == response.headers["X-Request-ID"]
+    finished = {span.name: span for span in spans.get_finished_spans()}
+    pipeline, http = finished[t.CHAT], finished["POST /chat"]
+    assert (pipeline.attributes or {})[t.REQUEST_ID] == body["request_id"]
+    assert pipeline.status.status_code is StatusCode.ERROR
+    # FastAPI's HTTP span is the trace root; the pipeline span sits inside it.
+    assert http.parent is None
+    assert pipeline.context is not None
+    assert http.context is not None
+    assert pipeline.context.trace_id == http.context.trace_id
+    assert (http.attributes or {})["http.response.status_code"] == 502
+
+
+def test_chat_empty_question(chat_client_for: ClientFactory) -> None:
+    response = chat_client_for(upload=False).post("/chat", json={"question": "  "})
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "empty_question"
+
+
+def test_chat_control_characters_are_removed(chat_client_for: ClientFactory) -> None:
+    case = CASES["exact_term_amount"]
+    client = chat_client_for(_oracle(case))
+
+    response = client.post("/chat", json={"question": "Which policy mentions\u0000 US$ 250?"})
+
+    assert response.status_code == 200
+    assert response.json()["outcome"] == "answered"
+
+
+def test_chat_question_too_long(chat_client_for: ClientFactory) -> None:
+    client = chat_client_for(upload=False, question_max_chars=10)
+
+    response = client.post("/chat", json={"question": "x" * 11})
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "question_too_long"
+
+
+def test_chat_no_ready_documents(chat_client_for: ClientFactory) -> None:
+    response = chat_client_for(upload=False).post("/chat", json={"question": "Anything?"})
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "no_ready_documents"

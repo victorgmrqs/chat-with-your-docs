@@ -1,0 +1,109 @@
+services:
+  db:
+    build:
+      context: ./db
+      target: local
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cwyd}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cwyd}
+      POSTGRES_DB: ${POSTGRES_DB:-cwyd}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U$${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+  backend:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cwyd}:${POSTGRES_PASSWORD:-cwyd}@db:5432/${POSTGRES_DB:-cwyd}
+      # Used only with OTEL_TRACES_EXPORTER=otlp; the jaeger service runs under the
+      # `observability` profile, so the backend never depends on it.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4318}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+  frontend:
+    build: ./frontend
+    environment:
+      BACKEND_URL: http://backend:8000
+      # Rate limits (CWYD-18): set them in .env; same defaults as the image.
+      RATE_LIMIT_CHAT: ${RATE_LIMIT_CHAT:-10r/m}
+      RATE_LIMIT_CHAT_BURST: ${RATE_LIMIT_CHAT_BURST:-5}
+      RATE_LIMIT_CHAT_CONNECTIONS: ${RATE_LIMIT_CHAT_CONNECTIONS:-2}
+      RATE_LIMIT_UPLOAD: ${RATE_LIMIT_UPLOAD:-6r/m}
+      RATE_LIMIT_UPLOAD_BURST: ${RATE_LIMIT_UPLOAD_BURST:-3}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:8080/"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+  # RAG evaluation (CWYD-11): `docker compose --profile eval run --build --rm eval`.
+  # API image plus eval code and fixtures (Dockerfile target `eval`); reports go to docs/eval/.
+  eval:
+    profiles: [eval]
+    build:
+      context: ./backend
+      target: eval
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-cwyd}:${POSTGRES_PASSWORD:-cwyd}@db:5432/${POSTGRES_DB:-cwyd}
+    # Host user, so the reports in the bind mount stay editable (override with EVAL_UID/EVAL_GID).
+    user: "${EVAL_UID:-1000}:${EVAL_GID:-1000}"
+    volumes:
+      - ./docs/eval:/app/reports  # output only; inputs are baked into the image
+    depends_on:
+      backend:  # applies the migrations
+        condition: service_healthy
+
+  # Tracing (CWYD-12): `docker compose --profile observability up --build --wait` with
+  # OTEL_TRACES_EXPORTER=otlp in .env. Jaeger UI on :16686; OTLP/HTTP receiver on the
+  # internal network only (backend -> jaeger:4318). In-memory storage: traces are lost on restart.
+  jaeger:
+    profiles: [observability]
+    image: jaegertracing/jaeger:2.23.0
+    ports:
+      - "127.0.0.1:16686:16686"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1:13133/status"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 30s
+      start_interval: 1s
+
+volumes:
+  db-data:

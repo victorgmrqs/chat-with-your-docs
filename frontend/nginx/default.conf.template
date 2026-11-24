@@ -1,0 +1,90 @@
+# Security headers (CWYD-14). The CSP fits the Vite build: one module script and one stylesheet
+# from /assets, bundled fonts, same-origin API; React `style` props go through the CSSOM, which
+# style-src does not restrict. API responses get none (empty value = header not sent): JSON needs
+# no CSP and Swagger UI loads an inline script and CDN assets.
+map $uri $content_security_policy {
+    ~^/api/ "";
+    default "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+}
+
+# Rate limits (CWYD-18, DOM-27), keyed on the client address. Rates come from the environment
+# (RATE_LIMIT_*, defaults in the Dockerfile). Uploads are limited only for POST: an empty key is
+# not counted, so the 2 s status polling (GET /api/documents) stays free.
+map $request_method $upload_limit_key {
+    POST    $binary_remote_addr;
+    default "";
+}
+limit_req_zone $binary_remote_addr zone=chat:10m rate=${RATE_LIMIT_CHAT};
+limit_req_zone $upload_limit_key zone=uploads:10m rate=${RATE_LIMIT_UPLOAD};
+limit_conn_zone $binary_remote_addr zone=chat_connections:10m;
+
+server {
+    listen 8080;
+    root /usr/share/nginx/html;
+
+    # Locations that declare their own add_header keep these instead of dropping them (nginx
+    # 1.29.3+); `always` covers error responses too.
+    add_header_inherit merge;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Content-Security-Policy $content_security_policy always;
+    # CWYD-20: deny the browser features the app never uses; no nginx version in headers or pages.
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()" always;
+    server_tokens off;
+
+    location /api/ {
+        # Uploads: nginx defaults to 1 MB. MAX_UPLOAD_MB (10) plus multipart overhead;
+        # the backend answers 413 file_too_large with the {code, detail} envelope.
+        client_max_body_size 11m;
+        error_page 413 = @upload_too_large;
+        # nginx answers a limited request with 503 by default, which reads as an outage.
+        limit_req_status 429;
+        limit_conn_status 429;
+        error_page 429 = @rate_limited;
+        proxy_pass ${BACKEND_URL}/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # CWYD-20: the API serves its docs and spec under /api (API_ROOT_PATH must match).
+        proxy_set_header X-Forwarded-Prefix /api;
+
+        # Nested locations inherit the body limit, error pages and proxy headers; proxy_pass is
+        # not inherited, so each one names its backend path.
+        # Exact matches: /api/chat/ and /api/documents/ fall to /api/ unlimited, which is safe
+        # only while the API answers them with a redirect (FastAPI redirect_slashes), not the route.
+        location = /api/chat {
+            limit_req zone=chat burst=${RATE_LIMIT_CHAT_BURST} nodelay;
+            limit_conn chat_connections ${RATE_LIMIT_CHAT_CONNECTIONS};
+            proxy_pass ${BACKEND_URL}/chat;
+        }
+
+        location = /api/documents {
+            limit_req zone=uploads burst=${RATE_LIMIT_UPLOAD_BURST} nodelay;
+            proxy_pass ${BACKEND_URL}/documents;
+        }
+    }
+
+    # Same {code, detail} envelope as the API when nginx itself rejects the body. No request_id:
+    # the request never reaches the API, so there is no trace to point at (DOM-23).
+    location @upload_too_large {
+        default_type application/json;
+        return 413 '{"code":"file_too_large","detail":"The file is too large. Upload a smaller file."}';
+    }
+
+    # Same envelope when a rate limit rejects the request (DOM-27). The security headers above
+    # still apply (`always` + add_header_inherit merge).
+    location @rate_limited {
+        default_type application/json;
+        add_header Retry-After 60 always;
+        return 429 '{"code":"rate_limited","detail":"Too many requests. Try again in a minute."}';
+    }
+
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+    }
+
+    location / {
+        try_files $uri /index.html;
+    }
+}

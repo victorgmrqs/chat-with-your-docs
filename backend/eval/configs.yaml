@@ -1,0 +1,25 @@
+# Configurations compared by `python -m eval.run` (CWYD-11). `settings` overrides the
+# environment's Settings (app/config.py field names); everything else comes from .env.
+# Model prices (chat and embedding; cost columns of the reports) come from app/prices.yaml,
+# shared with the API.
+
+configurations:
+  - name: baseline
+    description: Application defaults — hybrid retrieval (vector + full-text, RRF), reranker off, chunks of 1000/150 characters, MIN_RELEVANCE 0.30.
+    settings: {}
+
+  - name: rerank
+    description: Baseline with the LLM reranker on (RERANK_ENABLED=true, top 4) — one extra chat call per question with evidence.
+    settings:
+      rerank_enabled: true
+
+  - name: small-chunks
+    description: Baseline with chunks of 120/20 characters — fixture pages and sections are under 300 characters, so only chunks this small split them (closer to one sentence per chunk).
+    settings:
+      chunk_size: 120
+      chunk_overlap: 20
+
+  - name: strict-relevance
+    description: Baseline with MIN_RELEVANCE 0.45 — a stricter evidence gate (DOM-08), aimed at refusing unrelated questions without calling the chat model.
+    settings:
+      min_relevance: 0.45

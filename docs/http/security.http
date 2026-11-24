@@ -1,0 +1,58 @@
+# CWYD-14, CWYD-20 — security headers and the API docs switch. Run against `docker compose up --build --wait`
+# (VS Code / Cursor REST Client, or JetBrains HTTP Client). Check the response headers, not the body.
+
+# From inside the dev container the published ports live on the host daemon
+# (docker-outside-of-docker): set @host = host.docker.internal there.
+@host = localhost
+@api = http://{{host}}:8000
+@web = http://{{host}}:8080
+
+### SPA: 200 with X-Content-Type-Options: nosniff, Referrer-Policy: strict-origin-when-cross-origin,
+# X-Frame-Options: DENY, Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(),
+# usb=() and Content-Security-Policy: default-src 'self'; ... frame-ancestors 'none'.
+# Server: nginx, without a version (CWYD-20); on every response below too.
+HEAD {{web}}/
+
+### Assets location: missing file, still 404 with the four headers and the location's own
+# Cache-Control (an existing /assets/index-*.js, from the <script> tag of GET {{web}}/, gives 200)
+HEAD {{web}}/assets/missing.js
+
+### API through the proxy: 200 with nosniff, Referrer-Policy and X-Frame-Options, no CSP
+GET {{web}}/api/health
+
+# Upload rejected by nginx itself (body over 11 MB): 413 {"code":"file_too_large",...} with the
+# four headers. Not a REST-client request (needs a large file):
+#   head -c 12000000 /dev/zero > /tmp/big.txt && curl -si -F file=@/tmp/big.txt {{web}}/api/documents
+
+### API docs, default API_DOCS_ENABLED=true: 200 for /docs, /redoc and /openapi.json
+GET {{api}}/docs
+
+###
+GET {{api}}/openapi.json
+
+### With API_DOCS_ENABLED=false in .env (then `docker compose up -d backend`):
+# 404 {"detail":"Not Found"} for /docs, /redoc and /openapi.json; /health stays 200
+GET {{api}}/redoc
+
+### Swagger UI through the web server (CWYD-20): 200, the page loads url: '/api/openapi.json'
+GET {{web}}/api/docs
+
+### Spec through the web server: "servers": [{"url": "/api"}], so "Try it out" calls {{web}}/api/...
+GET {{web}}/api/openapi.json
+
+### "Try it out" on GET /health from {{web}}/api/docs: 200 {"status":"ok"}
+GET {{web}}/api/health
+
+### Swagger UI directly: 200, the page loads url: '/openapi.json' (no proxy header, no servers)
+GET {{api}}/docs
+
+### A prefix the API does not expect is ignored: the page still loads url: '/openapi.json'
+GET {{api}}/docs
+X-Forwarded-Prefix: /evil
+
+### A path that already has the prefix is not routed through the web server: 404, so the
+# rate-limited exact locations (DOM-27) cannot be skipped with /api/api/chat
+POST {{web}}/api/api/chat
+Content-Type: application/json
+
+{"question": "q"}

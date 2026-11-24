@@ -1,0 +1,88 @@
+# backend/ — FastAPI API
+
+<!-- Facts only. Layer conventions: .claude/rules/backend-*.md. Tooling: python-tooling skill. -->
+
+- Python 3.14, uv (`uv.lock` committed), project without packaging (`--no-package`).
+- Layout: `app/{domain,application,adapters,api}`; composition root `app/composition.py`;
+  app factory `app/main.py` (`create_app`, settings loaded in the lifespan, not at import).
+- Configuration: `app/config.py` (pydantic-settings). `load_settings()` raises
+  `ConfigurationError` naming every missing or empty variable. New settings go there and in
+  `.env.example` + `docs/operations.md`.
+- Health: `GET /health` (liveness, no I/O) and `GET /health/ready` (database + pgvector +
+  embedding column dimension, 503 otherwise). Routes have no `/api` prefix; nginx and the
+  Vite proxy strip it.
+- Documents (CWYD-3): `POST /documents` (202 + `BackgroundTasks` indexing, 200 on duplicate),
+  `GET /documents`, `GET /documents/{id}`. Use cases in `app/application/ingestion.py`
+  (`IngestionService`), ports in `app/application/ports.py`, rules DOM-01..06 in
+  `docs/domain-context.md`. Interrupted `indexing` documents are failed in the lifespan.
+  Hardening (CWYD-16, DOM-25..26): `check_embedding_dimensions` compares the setting with the
+  `chunks.embedding` dimension read by `PostgresReadiness` (`VectorSchemaPort`; readiness,
+  uploads and a startup log); `app/api/body_limit.py` is a pure ASGI middleware cutting off
+  bodies over `MAX_UPLOAD_MB` + 1 MB (`413 file_too_large`); `EmbeddingMisconfigured` (a
+  subclass of `EmbeddingUnavailable`) becomes the retryable `provider_misconfigured`.
+  Upload checks (CWYD-19, DOM-01/28): `check_content` (domain) rejects bytes that do not match
+  the extension; `DocumentParserAdapter(max_pdf_pages=...)` raises `TooManyPages` before
+  extracting text, and `IngestionService` wraps the PDF parse in `asyncio.timeout`
+  (`ParseTimeout`; cancelling the parse stops the worker thread at its next page).
+- Chat (CWYD-4): `POST /chat`, use case `AnswerQuestion` in `app/application/answering.py`
+  (retrieve -> relevance gate -> optional rerank -> S-labelled context -> structured answer ->
+  citation resolution), prompts/structured-output schemas in `app/application/prompts.py`,
+  reranker in `app/application/reranking.py`, domain types and citation rules in
+  `app/domain/answers.py` (DOM-07..13). Hybrid SQL + RRF in `app/adapters/postgres_retriever.py`.
+  `ChatModelPort` adapters: `openai_chat.py` / `anthropic_chat.py` over `langchain_chat.py`
+  (structured output, timeout/retries, errors mapped to `ChatModelTimeout` /
+  `ChatModelUnavailable` without provider text), selected by `CHAT_PROVIDER` in
+  `app/composition.py`.
+- RAG evaluation (CWYD-11): `eval/` (Dockerfile target `eval`, built only by the Compose `eval` profile).
+  `dataset.yaml` golden questions, `configs.yaml` configurations (prices: `app/prices.yaml`,
+  shared with the API), `runner.py`
+  drives the real container (`build_container(wrap_retriever=...)` records retrieval), pure
+  scoring in `scoring.py` (DOM-20/21), reports to `docs/eval/`. `python -m eval.run [--config N]`.
+  Adversarial prompt-injection set (CWYD-21, DOM-29): `adversarial.yaml` over its own fixtures
+  (`scripts/generate_fixtures.py`) and eval owner, scored in memory (answer text never written)
+  and reported in a separate section; `--no-adversarial` skips it.
+- Errors: domain errors subclass `DomainError` (`code` + message); `app/api/errors.py` maps each
+  to its status and the `{code, detail, request_id}` body, plus a generic `500 internal_error`
+  for anything unhandled. `app/api/request_id.py`: middleware that sets `X-Request-ID` on every
+  response (`request_id_of(request)`, never client-supplied; DOM-23). `app/api/forwarded_prefix.py`
+  (CWYD-20): sets `root_path` when `X-Forwarded-Prefix` equals `API_ROOT_PATH`, so the docs work
+  behind nginx's `/api` and directly. Routes get the container
+  via `app/api/dependencies.py:get_container`.
+- Tracing (CWYD-12): span/attribute names and helpers (`step`, `record_usage`, `add_content`)
+  in `app/application/telemetry.py`, over the OpenTelemetry API only; SDK, sampler and exporter
+  in `app/adapters/telemetry.py` (`configure_tracing`, called in the lifespan, shut down on
+  exit), selected by `OTEL_TRACES_EXPORTER` (`none` | `console` | `otlp`). Pipeline spans `rag.chat` and
+  `ingest.document` sit inside FastAPI's native HTTP span (`FastAPI(telemetry=...)` in
+  `app/main.py` excludes `/health*`). `ChatModelPort.generate` and `RerankerPort.rerank` return
+  `Generation(value, usage)`; `TokenUsage` / `PriceTable` in `app/domain/usage.py`, loaded from
+  `app/prices.yaml` (`PRICE_TABLE_PATH`, default resolved from the package) by
+  `app/adapters/price_table.py`. Rules DOM-22..24. Hardening (CWYD-27): FastAPI telemetry logs
+  off; `configure_tracing` installs a no-op propagator (client `traceparent`/`baggage` ignored);
+  the root span records token totals and cost only when some call reported usage.
+  Embeddings (CWYD-28): `EmbeddingPort.embed_documents` returns `Generation` too; the OpenAI
+  adapter calls the SDK's `embeddings.create` directly (batched by count and characters) so it
+  can read usage. `ingest.embed` and `retrieval.embed_query` record model/tokens; the question's
+  totals include the query embedding; a successful indexing job logs tokens and cost
+  (`t.record_cost`). The eval records embedding usage via `build_container(wrap_embeddings=...)`.
+  Tests read spans from an in-memory exporter.
+- Schema: Alembic, hand-written revisions in `migrations/versions/` (`target_metadata = None`;
+  never edit an applied revision, add a new one). The image runs `alembic upgrade head` before
+  uvicorn; integration tests run the same upgrade in `tests/conftest.py`.
+- Tests: `tests/unit` (no I/O), `tests/integration` (marker `integration`, PostgreSQL from
+  testcontainers, image built from `db/Dockerfile`, session-scoped). Fixtures live in
+  `tests/conftest.py`; shared builders in `tests/factories.py` (tests never import conftest).
+  Embedding and chat-model fakes in `tests/fakes.py`. `tests/contract` runs both chat
+  adapters against a local HTTP stub (`tests/provider_stub.py`), with each provider's payloads
+  and builder in `tests/chat_providers.py`; marker `live` (real providers)
+  runs only with `RUN_LIVE_TESTS=1`. Expected-evidence cases: `tests/fixtures/rag_cases.json`.
+  Document fixtures in `tests/fixtures/documents/` are generated by
+  `scripts/generate_fixtures.py` (output committed).
+
+```bash
+uv run ruff check . && uv run ruff format --check .
+uv run mypy .
+uv run pytest                    # -m "not integration" to skip Docker
+RUN_LIVE_TESTS=1 uv run --env-file ../.env pytest -m live   # opt-in, real providers
+```
+
+- Image: `Dockerfile` (uv multi-stage, `uv sync --locked --no-dev`, non-root uid 10001).

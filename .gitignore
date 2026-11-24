@@ -1,0 +1,28 @@
+# dev-workflow
+task-brief.yaml
+.dev-workflow/state/
+.loop-stop
+
+# Secrets and local agent settings
+.claude/settings.local.json
+.env*
+!.env.example
+
+# Local working notes (course-derived material, decision log, challenge copy) — never published
+_docs/
+
+# Playwright CLI artifacts (may contain auth state/tokens)
+.playwright-cli/
+test-results/
+playwright-report/
+
+# Python
+.venv/
+__pycache__/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/

@@ -1,0 +1,203 @@
+{
+  "$description": "Design tokens of Chat With Your Docs, extracted from the design handoff. `measured` is written by frontend/scripts/tokens/extract.mjs (value -> occurrences). `merged` maps near-duplicate measured values to the primitive that replaces them. `primitive` holds raw values (plus the brand symbol's detail color from _docs/design/brand); `semantic` and `component` reference the layer below by name. frontend/src/styles/theme.css must declare exactly these tokens: `npm run tokens:audit`.",
+  "$source": [
+    "_docs/design/1-empty-collection.html",
+    "_docs/design/2-indexing.html",
+    "_docs/design/3-answer-two-sources.html",
+    "_docs/design/4-not-enough-evidence.html",
+    "_docs/design/5-component-states.html"
+  ],
+  "measured": {
+    "color": {
+      "#5F5F66": 59,
+      "#E4E4E0": 44,
+      "#FFFFFF": 41,
+      "#2952CC": 36,
+      "#18181B": 15,
+      "#45454C": 15,
+      "#1B6B36": 14,
+      "#CFCFCA": 13,
+      "#E7F4EA": 13,
+      "#F6F6F4": 9,
+      "#EEF2FC": 9,
+      "#2E2E33": 9,
+      "#1E3E9E": 8,
+      "#A3231A": 8,
+      "#E8B4AE": 5,
+      "#F0F0EE": 5,
+      "#EDEDEA": 5,
+      "#FFF1D6": 4,
+      "#7A4A00": 4,
+      "#DCDCD7": 3,
+      "#FCE8E6": 3,
+      "#FDF3F2": 2,
+      "#6B6B72": 1,
+      "#FAFAF9": 1
+    },
+    "fontSize": {
+      "12px": 67,
+      "14px": 44,
+      "13px": 34,
+      "15px": 13,
+      "16px": 5,
+      "20px": 4,
+      "24px": 1,
+      "17px": 1,
+      "28px": 1
+    },
+    "radius": {
+      "10px": 40,
+      "999px": 20,
+      "14px": 16,
+      "12px": 13,
+      "8px": 12,
+      "6px": 12,
+      "4px": 4,
+      "5px": 2,
+      "16px": 1,
+      "3px": 1
+    },
+    "lineHeight": {
+      "1.5": 13,
+      "1.6": 6,
+      "1.45": 4,
+      "1.55": 4,
+      "1.65": 1
+    }
+  },
+  "merged": {
+    "color": {
+      "#EDEDEA": "#F0F0EE",
+      "#DCDCD7": "#E4E4E0",
+      "#6B6B72": "#5F5F66"
+    },
+    "radius": {
+      "3px": "4px",
+      "5px": "6px"
+    },
+    "lineHeight": {
+      "1.55": "1.6",
+      "1.65": "1.6"
+    }
+  },
+  "primitive": {
+    "color": {
+      "white": "#FFFFFF",
+      "gray-25": "#FAFAF9",
+      "gray-50": "#F6F6F4",
+      "gray-100": "#F0F0EE",
+      "gray-200": "#E4E4E0",
+      "gray-300": "#CFCFCA",
+      "gray-600": "#5F5F66",
+      "gray-700": "#45454C",
+      "gray-800": "#2E2E33",
+      "gray-900": "#18181B",
+      "blue-50": "#EEF2FC",
+      "blue-100": "#C9D6F7",
+      "blue-600": "#2952CC",
+      "blue-800": "#1E3E9E",
+      "green-50": "#E7F4EA",
+      "green-700": "#1B6B36",
+      "amber-50": "#FFF1D6",
+      "amber-800": "#7A4A00",
+      "red-25": "#FDF3F2",
+      "red-50": "#FCE8E6",
+      "red-200": "#E8B4AE",
+      "red-700": "#A3231A"
+    },
+    "fontSize": {
+      "caption": "12px",
+      "label": "13px",
+      "body-sm": "14px",
+      "body": "15px",
+      "body-lg": "16px",
+      "title-sm": "17px",
+      "title": "20px",
+      "heading": "24px",
+      "display": "28px"
+    },
+    "radius": {
+      "xs": "4px",
+      "sm": "6px",
+      "md": "8px",
+      "lg": "10px",
+      "xl": "12px",
+      "2xl": "14px",
+      "3xl": "16px",
+      "full": "999px"
+    },
+    "lineHeight": {
+      "snug": "1.45",
+      "normal": "1.5",
+      "relaxed": "1.6"
+    },
+    "fontFamily": {
+      "sans": "'Inter Variable', system-ui, sans-serif"
+    },
+    "letterSpacing": {
+      "eyebrow": "0.06em"
+    }
+  },
+  "semantic": {
+    "color": {
+      "background": "white",
+      "foreground": "gray-900",
+      "foreground-secondary": "gray-800",
+      "foreground-tertiary": "gray-700",
+      "card": "white",
+      "card-foreground": "gray-900",
+      "popover": "white",
+      "popover-foreground": "gray-900",
+      "primary": "blue-600",
+      "primary-foreground": "white",
+      "primary-hover": "blue-800",
+      "primary-soft": "blue-100",
+      "secondary": "gray-100",
+      "secondary-foreground": "gray-900",
+      "muted": "gray-50",
+      "muted-foreground": "gray-600",
+      "surface-subtle": "gray-25",
+      "accent": "blue-50",
+      "accent-foreground": "blue-800",
+      "border": "gray-200",
+      "input": "gray-300",
+      "ring": "blue-600",
+      "disabled": "gray-200",
+      "disabled-foreground": "gray-600",
+      "destructive": "red-700",
+      "destructive-foreground": "white",
+      "destructive-subtle": "red-25",
+      "destructive-soft": "red-50",
+      "destructive-border": "red-200",
+      "success": "green-700",
+      "success-subtle": "green-50",
+      "warning": "amber-800",
+      "warning-subtle": "amber-50",
+      "info": "blue-800",
+      "info-subtle": "blue-50",
+      "sidebar": "gray-50"
+    }
+  },
+  "component": {
+    "color": {
+      "status-indexing": "warning-subtle",
+      "status-indexing-foreground": "warning",
+      "status-ready": "success-subtle",
+      "status-ready-foreground": "success",
+      "status-failed": "destructive-soft",
+      "status-failed-foreground": "destructive",
+      "citation": "accent",
+      "citation-foreground": "primary",
+      "highlight": "accent",
+      "highlight-border": "primary",
+      "highlight-foreground": "accent-foreground",
+      "bubble": "secondary",
+      "skeleton": "secondary",
+      "passage": "muted",
+      "passage-foreground": "foreground-secondary",
+      "related-passage": "surface-subtle",
+      "related-passage-border": "input",
+      "brand-detail": "primary-soft"
+    }
+  }
+}

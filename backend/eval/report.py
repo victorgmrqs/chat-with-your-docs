@@ -1,0 +1,182 @@
+"""Markdown and JSON reports. Ids, file names and metrics only: no answer or chunk text."""
+
+import json
+from collections.abc import Sequence
+from dataclasses import asdict
+from pathlib import Path
+from typing import Any
+
+from eval.runner import AdversarialRun, DocumentRow, RunResult
+from eval.scoring import Summary
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.0%}"
+
+
+def _ratio(value: float | None) -> str:
+    return "n/a" if value is None else f"{value:.2f}"
+
+
+def _flag(value: bool | None) -> str:
+    return "-" if value is None else ("yes" if value else "**no**")
+
+
+def _usd(value: float | None) -> str:
+    return "n/a" if value is None else f"${value:.4f}"
+
+
+def _summary_rows(summary: Summary) -> list[tuple[str, str]]:
+    return [
+        ("Questions (errors)", f"{summary.questions} ({summary.errors})"),
+        ("Outcome accuracy", _pct(summary.outcome_accuracy)),
+        ("Retrieval hit@k (mean)", _pct(summary.mean_hit_at_k)),
+        ("Expected-source MRR", _ratio(summary.mean_reciprocal_rank)),
+        ("Correct refusal rate", _pct(summary.refusal_rate)),
+        ("Citation validity", _pct(summary.citation_validity)),
+        ("Citation recall (mean)", _pct(summary.mean_citation_recall)),
+        ("Latency p50 / p95", f"{summary.latency_p50_ms:.0f} / {summary.latency_p95_ms:.0f} ms"),
+        ("Tokens in / out", f"{summary.input_tokens} / {summary.output_tokens}"),
+        ("Cost (chat + query embedding)", _usd(summary.cost_usd)),
+        ("Answers using the reranked order", str(summary.reranked)),
+    ]
+
+
+def _document_rows(documents: Sequence[DocumentRow]) -> list[str]:
+    return [
+        "| File | Status | Chunks |",
+        "|---|---|---|",
+        *(
+            f"| {d.filename} | {d.status}{f' ({d.failure_reason})' if d.failure_reason else ''}"
+            f" | {d.chunk_count} |"
+            for d in documents
+        ),
+    ]
+
+
+def _adversarial_section(run: AdversarialRun) -> list[str]:
+    """DOM-29: shown apart from the golden metrics; failure reasons only, never answer text."""
+    summary = run.summary
+    lines = [
+        "## Adversarial cases (prompt injection)",
+        "",
+        f"Dataset: `backend/eval/adversarial.yaml` (sha256 `{run.dataset_sha256[:12]}`), "
+        "indexed under its own evaluation owner (DOM-29).",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        f"| Cases (errors) | {summary.questions} ({summary.errors}) |",
+        f"| Injection resistance | {_pct(summary.injection_resistance)} |",
+        f"| Outcome accuracy | {_pct(summary.outcome_accuracy)} |",
+        f"| Citation validity | {_pct(summary.citation_validity)} |",
+        f"| Cost (chat + query embedding) | {_usd(summary.cost_usd)} |",
+        "",
+        *_document_rows(run.documents),
+        "",
+        "| Case | Attack | Expected | Outcome | Citations valid | Cited | Result |",
+        "|---|---|---|---|---|---|---|",
+    ]
+    for s in run.scores:
+        outcome = s.outcome or f"error: {s.error}"
+        failures = s.injection_failures or ()
+        result = "resisted" if not failures else "**failed: " + ", ".join(failures) + "**"
+        lines.append(
+            f"| `{s.question_id}` | {s.attack} | {s.expected_outcome} | {outcome} "
+            f"| {_flag(s.citation_valid)} | {s.cited} | {result} |"
+        )
+    return lines
+
+
+def render_run(result: RunResult) -> str:
+    lines = [
+        f"# RAG evaluation — `{result.config.name}`",
+        "",
+        result.config.description,
+        "",
+        f"- Run: {result.started_at:%Y-%m-%d %H:%M} UTC",
+        f"- Dataset: `backend/eval/dataset.yaml` (sha256 `{result.dataset_sha256[:12]}`)",
+        "- Settings: " + ", ".join(f"`{name}={value}`" for name, value in result.settings.items()),
+        "",
+        *(
+            ["> **Warning:** not every document is Ready; metrics cover a partial collection.", ""]
+            if result.partial_collection
+            else []
+        ),
+        "## Summary",
+        "",
+        "| Metric | Value |",
+        "|---|---|",
+        *(f"| {name} | {value} |" for name, value in _summary_rows(result.summary)),
+        "",
+        "## Documents",
+        "",
+        *_document_rows(result.documents),
+        "",
+        "## Questions",
+        "",
+        "| Question | Category | Expected | Outcome | hit@k | MRR | Refusal ok "
+        "| Citations valid | Cited | Latency | Tokens in/out | Cost |",
+        "|---|---|---|---|---|---|---|---|---|---|---|---|",
+    ]
+    for s in result.scores:
+        outcome = s.outcome or f"error: {s.error}"
+        if s.outcome is not None and not s.outcome_correct:
+            outcome = f"**{outcome}**"
+        lines.append(
+            f"| `{s.question_id}` | {s.category} | {s.expected_outcome} | {outcome} "
+            f"| {_pct(s.hit_at_k)} | {_ratio(s.reciprocal_rank)} | {_flag(s.refusal_correct)} "
+            f"| {_flag(s.citation_valid)} "
+            f"| {s.cited} | {s.latency_ms:.0f} ms | {s.input_tokens}/{s.output_tokens} "
+            f"| {_usd(s.cost_usd)} |"
+        )
+    if result.adversarial:
+        lines += ["", *_adversarial_section(result.adversarial)]
+    return "\n".join(lines) + "\n"
+
+
+def render_comparison(results: Sequence[RunResult]) -> str:
+    header = "| Metric | " + " | ".join(f"`{r.config.name}`" for r in results) + " |"
+    rows = [header, "|---|" + "---|" * len(results)]
+    columns = [_summary_rows(r.summary) for r in results]
+    for metric in zip(*columns, strict=True):  # one row per metric, one cell per configuration
+        rows.append(f"| {metric[0][0]} | " + " | ".join(value for _, value in metric) + " |")
+    if any(r.adversarial for r in results):  # DOM-29, from the separate adversarial collection
+        cells = [
+            _pct(r.adversarial.summary.injection_resistance) if r.adversarial else "n/a"
+            for r in results
+        ]
+        rows.append("| Prompt-injection resistance (adversarial set) | " + " | ".join(cells) + " |")
+    descriptions = [f"- `{r.config.name}`: {r.config.description}" for r in results]
+    return (
+        "\n".join(
+            [
+                "# RAG evaluation — comparison",
+                "",
+                "Generated by `python -m eval.run`; per-configuration reports sit next to it.",
+                "",
+                *descriptions,
+                "",
+                *rows,
+            ]
+        )
+        + "\n"
+    )
+
+
+def _json(result: RunResult) -> dict[str, Any]:
+    data = asdict(result)
+    data["config"] = result.config.model_dump()
+    return data
+
+
+def write_run(result: RunResult, out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / f"{result.config.name}.md").write_text(render_run(result))
+    (out_dir / f"{result.config.name}.json").write_text(
+        json.dumps(_json(result), indent=2, default=str) + "\n"
+    )
+
+
+def write_comparison(results: Sequence[RunResult], out_dir: Path) -> None:
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "comparison.md").write_text(render_comparison(results))
