@@ -4,6 +4,7 @@
 # changes ─┬─ backend ──┐
 #          └─ frontend ─┴─ image (build + scan, per component) ── publish (GHCR) ─┐
 # skills-drift ───────────────────────────────────────────────────────────────────┤
+# dependency-audit ───────────────────────────────────────────────────────────────┤
 #                                                                                 ci-gate
 # Third-party actions are pinned by commit SHA; the comment names the release.
 
@@ -146,6 +147,33 @@ jobs:
       - name: Generated testing guides match their .claude/skills copies
         run: scripts/check-generated-skills.sh
 
+  dependency-audit:
+    name: dependency audit
+    # Always runs (no path filter): a new advisory against an unchanged lockfile must block too.
+    # Accepting a reviewed advisory: osv-scanner.toml (README § "CI and images").
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OSV_SCANNER_VERSION: v2.7.1
+      OSV_SCANNER_SHA256: fb7dab19a8bd9bbe5c3189f09d4b7ee1820c9553a23bac202648a56efd2f6ee8
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Accepted advisories have a reason and an expiry
+        run: python3 scripts/check-audit-ignores.py osv-scanner.toml
+      - name: Install osv-scanner (release binary, checksum pinned)
+        # The release binary is pinned by checksum; the published action pins its image by tag only.
+        run: |
+          curl -fsSLo osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_SCANNER_VERSION}/osv-scanner_linux_amd64"
+          echo "${OSV_SCANNER_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+      - name: Scan backend/uv.lock and frontend/package-lock.json (any known advisory fails)
+        run: |
+          ./osv-scanner scan source --config=osv-scanner.toml \
+            --lockfile=backend/uv.lock --lockfile=frontend/package-lock.json
+
   image:
     name: image
     needs: [changes, backend, frontend]
@@ -262,7 +290,7 @@ jobs:
 
   ci-gate:
     name: ci-gate
-    needs: [changes, backend, frontend, skills-drift, image, publish]
+    needs: [changes, backend, frontend, skills-drift, dependency-audit, image, publish]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

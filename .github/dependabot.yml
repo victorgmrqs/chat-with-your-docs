@@ -1,0 +1,63 @@
+# Dependabot version updates (CWYD-24). README § "CI and images" describes the flow.
+#
+# - Weekly, Monday; PRs target development (feature flow), never main.
+# - Minor and patch updates are grouped into one PR per ecosystem; majors come one PR each.
+# - Security updates (the repository setting) stay off: they always target the default branch
+#   (main). Advisories are caught by the `dependency audit` CI job instead.
+# - Dependabot's default 3-day cooldown applies: a release is only proposed 3 days after it is
+#   published.
+
+version: 2
+
+updates:
+  - package-ecosystem: uv
+    directory: /backend
+    target-branch: development
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: npm
+    directory: /frontend
+    target-branch: development
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: docker
+    directories: [/backend, /frontend, /db, /.devcontainer]
+    target-branch: development
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
+
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: development
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
