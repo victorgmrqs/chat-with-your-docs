@@ -68,6 +68,14 @@ All notable changes to this project are documented here. The format follows
   `scripts/smoke.sh`, an end-to-end smoke test for any base URL
   ([CWYD-7](https://goncalvesmarques.atlassian.net/browse/CWYD-7)).
 
+### Changed
+
+- The README is now the submission document: setup, architecture diagram, productionization,
+  RAG/LLM choices, key decisions, engineering standards, AI tool usage, next steps and
+  screenshots. The operational reference moved unchanged to `docs/operations.md` and
+  `docs/development.md`, and the RAG quality table reflects the latest evaluation run
+  ([CWYD-8](https://goncalvesmarques.atlassian.net/browse/CWYD-8)).
+
 ### Fixed
 
 - The documents sidebar no longer overflows its column: a long file name widened it past the

@@ -6,6 +6,18 @@ in those documents with verifiable citations, or an explicit "not enough evidenc
 Architecture: React SPA → FastAPI → PostgreSQL + pgvector, with the LLM providers behind
 ports and adapters. Provider and model names come from configuration, never from code.
 
+## Demo
+
+| Two-source answer | Not enough evidence |
+|---|---|
+| ![Answer citing two documents](docs/evidence/CWYD-8/answer-two-sources.png) | ![Insufficient-evidence answer](docs/evidence/CWYD-8/not-enough-evidence.png) |
+
+| Indexing, ready and failed documents |
+|---|
+| ![Documents indexing](docs/evidence/CWYD-8/indexing.png) |
+
+Traces of each outcome are under [Observability](#observability).
+
 ## Quick setup
 
 Requirements: Docker with Compose v2.24 or newer. Nothing else needs to be installed on the host.
@@ -23,465 +35,313 @@ docker compose up --build --wait
 | `backend`  | http://localhost:8000   | FastAPI; interactive docs at `/docs`                         |
 | `db`       | `localhost:5432`        | PostgreSQL 17 + pgvector; local-only credentials `cwyd/cwyd` |
 
-All ports are bound to `127.0.0.1`. Stop with `docker compose down`; add `-v` to also delete the
-database volume.
+| Variable            | Required                       | Purpose                                   |
+| ------------------- | ------------------------------ | ----------------------------------------- |
+| `CHAT_PROVIDER`     | yes                            | `openai` or `anthropic`                   |
+| `CHAT_MODEL`        | yes                            | Chat model name for the selected provider |
+| `EMBEDDING_MODEL`   | yes                            | OpenAI embedding model                    |
+| `OPENAI_API_KEY`    | yes                            | Embeddings always use OpenAI              |
+| `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                      |
 
-### Configuration
+All ports are bound to `127.0.0.1`. Every other setting has a default; the full list is in
+[docs/operations.md](docs/operations.md#configuration). Stop with `docker compose down`; add `-v`
+to also delete the database volume.
 
-Every variable is listed in [`.env.example`](.env.example).
+**Try it.** Open http://localhost:8080 and upload `remote-work-policy.pdf`, `expense-policy.pdf`
+and `parental-leave-policy.md` from
+[`backend/tests/fixtures/documents/`](backend/tests/fixtures/documents/). Once they are Ready, ask:
 
-| Variable            | Required                       | Purpose                                         |
-| ------------------- | ------------------------------ | ----------------------------------------------- |
-| `CHAT_PROVIDER`     | yes                            | `openai` or `anthropic`                         |
-| `CHAT_MODEL`        | yes                            | Chat model name for the selected provider       |
-| `EMBEDDING_MODEL`   | yes                            | OpenAI embedding model                          |
-| `OPENAI_API_KEY`    | yes                            | Embeddings always use OpenAI                    |
-| `ANTHROPIC_API_KEY` | when `CHAT_PROVIDER=anthropic` | Anthropic chat model                            |
-| `POSTGRES_*`        | no                             | Local database credentials (default `cwyd`)     |
-| `MAX_UPLOAD_MB`     | no (10)                        | Upload size limit; larger files get `413`       |
-| `PDF_MAX_PAGES`     | no (500)                       | PDFs with more pages fail with `too_many_pages` |
-| `PDF_PARSE_TIMEOUT_SECONDS` | no (60)                | Longer PDF parses fail with `parse_timeout`     |
-| `RATE_LIMIT_*`      | no                             | Web server rate limits, see [Rate limits](#rate-limits) |
-| `EMBEDDING_DIMENSIONS` | no (1536)                   | Must match the `vector` column of the migration; a mismatch fails readiness and uploads (`503`) |
-| `CHUNK_SIZE`        | no (1000)                      | Chunk size in characters                        |
-| `CHUNK_OVERLAP`     | no (150)                       | Overlap between chunks; smaller than the size   |
-| `DEFAULT_OWNER_ID`  | no (`00000000-0000-0000-0000-000000000001`) | Owner of every document (single-user MVP) |
-| `QUESTION_MAX_CHARS` | no (2000)                     | Longer questions get `400 question_too_long`    |
-| `RETRIEVAL_CANDIDATES` | no (20)                     | Chunks per search branch (vector, full-text)    |
-| `RETRIEVAL_TOP_K`   | no (6)                         | Fused chunks considered for the prompt; at most twice `RETRIEVAL_CANDIDATES` |
-| `MIN_RELEVANCE`     | no (0.30)                      | Cosine floor (0-1) for vector-only hits         |
-| `RERANK_ENABLED`    | no (false)                     | One extra chat call that reranks the evidence   |
-| `RERANK_TOP_N`      | no (4)                         | Chunks kept by the reranker                     |
-| `CONTEXT_TOKEN_BUDGET` | no (3000)                   | Token budget of the sources in the prompt       |
-| `ANSWER_MAX_TOKENS` | no (800)                       | Maximum answer length in tokens                 |
-| `CHAT_TIMEOUT_SECONDS` | no (30)                     | Per-attempt chat provider timeout               |
-| `CHAT_MAX_RETRIES`  | no (2)                         | Retries on timeouts, 429 and 5xx                |
-| `CHAT_TEMPERATURE`  | no (unset)                     | Sent only when set; some models reject it       |
-| `OTEL_TRACES_EXPORTER` | no (`none`)                 | Tracing: `none`, `console` (stdout) or `otlp` (Jaeger) |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | no (Compose: `http://jaeger:4318`) | OTLP/HTTP base URL; `/v1/traces` is added. Jaeger's OTLP port is not published, so `otlp` reaches it only from inside Compose |
-| `OTEL_SERVICE_NAME` | no (`cwyd-backend`)            | Service name shown in Jaeger                    |
-| `OTEL_TRACES_SAMPLER_ARG` | no (1.0)                 | Share of new traces kept (0-1)                  |
-| `CAPTURE_CONTENT`   | no (false)                     | Dev only: question, prompt and answer text as span events |
-| `PRICE_TABLE_PATH`  | no (bundled `app/prices.yaml`) | Chat and embedding model prices for the estimated cost; a relative value resolves from the working directory |
-| `API_DOCS_ENABLED`  | no (true)                      | `false` removes `/docs`, `/redoc` and `/openapi.json` (404); set it in production |
-| `API_ROOT_PATH`     | no (/api)                      | Prefix the web server proxies to the API; must match its `X-Forwarded-Prefix` |
-| `EVAL_UID`, `EVAL_GID` | no (1000)                   | Host user that writes the RAG evaluation reports |
+- *Can I work from a coworking space, and what is the monthly reimbursement limit?* — answered
+  from two documents, each with a citation.
+- *Can parental leave be split into several separate periods?* — "Not enough evidence": the
+  policy does not say, and the app does not guess.
 
-`DATABASE_URL` is built by Compose from the `POSTGRES_*` values. Set it yourself only when
-running the API outside Compose (scheme `postgresql+asyncpg://`; other schemes are rejected at
-startup). Keep `POSTGRES_*` URL-safe (letters, digits, `-`, `_`, `.`): they are inserted into
-the URL as is.
+`scripts/smoke.sh http://localhost:8080` runs the same flow from the command line, against any
+environment (readiness, upload, two-source answer, insufficient evidence).
 
-`POSTGRES_*` take effect only when the database volume is created. After changing them, recreate
-it with `docker compose down -v` (this deletes the local data), or the backend keeps failing
-authentication against the old credentials.
+## Architecture
 
-## Health check
-
-```bash
-curl -s localhost:8000/health         # {"status":"ok"}  liveness, never touches the database
-curl -s localhost:8000/health/ready   # {"status":"ready","pgvector":"0.8.7"}
-curl -s localhost:8080/api/health     # same API through the frontend's nginx proxy
+```mermaid
+flowchart LR
+    user([Browser]) --> web["frontend<br/>nginx + React SPA"]
+    web -- "/api/*" --> api["backend<br/>FastAPI"]
+    api --> db[("PostgreSQL + pgvector<br/>documents · chunks<br/>embedding + tsvector")]
+    api -- ChatModelPort --> chat["OpenAI or Anthropic<br/>chat model"]
+    api -- EmbeddingPort --> emb["OpenAI<br/>embeddings"]
+    api -. "OTLP (profile observability)" .-> jaeger["Jaeger"]
 ```
 
-`/health/ready` answers `503` with `database unavailable` or `pgvector extension missing` when
-the dependency is not there, and with `embedding dimension mismatch` when `EMBEDDING_DIMENSIONS`
-differs from the database's `vector` column (also logged once at startup). Compose uses it as
-the backend health check, and the frontend only starts once the backend is ready.
+The backend follows ports and adapters: `app/domain` and `app/application` (use cases) import no
+provider SDK; `app/adapters` holds the OpenAI, Anthropic and PostgreSQL implementations, and
+`app/api` is the HTTP edge. The provider is chosen at startup from configuration.
 
-## Documents
+**Upload and indexing (asynchronous).** `POST /documents` validates type, content and size, and
+returns the existing document when the same file (SHA-256) was already uploaded. A new document
+is stored as `indexing` and the API answers `202`. A background task parses it (pages for PDF,
+heading sections for Markdown), splits it into chunks, embeds them and stores each chunk with
+its embedding and a full-text vector. The document ends `ready` or `failed` with a reason; the UI
+polls until then.
 
-Upload `.pdf` (with selectable text), `.md` or `.txt` files up to `MAX_UPLOAD_MB`. The content
-must match the extension (a `.pdf` starts with `%PDF-`, text is UTF-8 without NUL bytes),
-otherwise `415`. Indexing
-runs in the background: the upload answers `202` with status `indexing`; poll until `ready` or
-`failed`. A PDF over `PDF_MAX_PAGES` or `PDF_PARSE_TIMEOUT_SECONDS` fails with `too_many_pages`
-or `parse_timeout` (DOM-28).
+**Question (synchronous).** `POST /chat` embeds the question and runs one SQL query that combines
+vector and full-text search with Reciprocal Rank Fusion, limited to the owner's Ready documents.
+With no relevant chunk the chat model is not called and the answer is "Not enough evidence".
+Otherwise the chunks go into the prompt as labelled, delimited sources within a token budget;
+the model returns a structured answer that cites labels, and the backend keeps only the labels it
+sent, building each citation (file, page or heading, passage) from the stored chunk.
 
-```bash
-curl -s -F file=@backend/tests/fixtures/documents/expense-policy.pdf localhost:8000/documents
-curl -s localhost:8000/documents/<id>   # {"status":"ready","chunk_count":N,...}
-curl -s localhost:8000/documents        # all documents, newest first
-```
+## Productionizing and scaling on a hyperscaler
 
-- Uploading the same file again returns the existing document (`200`) instead of a copy. A
-  document that failed with `indexing_failed` (temporary: embeddings provider or database
-  unavailable) or `provider_misconfigured` (the provider rejected `OPENAI_API_KEY` or
-  `EMBEDDING_MODEL`: fix the setting first) is indexed again on re-upload (`202`, same id);
-  `no_extractable_text` (for example a scanned PDF) needs another version of the file. Each
-  document's `can_retry` says which case applies (DOM-04).
-- Errors use one envelope, `{"code": "...", "detail": "...", "request_id": "..."}`:
-  `415 unsupported_type`, `413 file_too_large`, `400 empty_file`, `404 document_not_found`,
-  `503 database_unavailable`, `503 embedding_dimension_mismatch`, and `500 internal_error` with
-  a generic message for any unexpected failure. `request_id` equals the `X-Request-ID` header
-  every response carries; quote it when reporting a problem (see [Tracing](#tracing)). Through the frontend proxy
-  (`:8080/api`), nginx accepts bodies up to 11 MB (10 MB plus multipart overhead) and answers
-  larger ones with `413 file_too_large` (`code` and `detail` only: the request never reaches the
-  API, so there is no `request_id` or trace); raise `client_max_body_size` in
-  `frontend/nginx/default.conf.template` together with `MAX_UPLOAD_MB`. Called directly
-  (`:8000`), the API itself cuts off bodies over `MAX_UPLOAD_MB` plus 1 MB without reading them
-  (`413 file_too_large` with `request_id`).
-- A document left `indexing` by a restart is marked `failed` / `indexing_failed` when the API
-  starts; upload it again to retry.
-- Every request in [`docs/http/documents.http`](docs/http/documents.http) can be run against the
-  Compose stack. Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-01..06, DOM-25..26).
+Most of the groundwork is already there: two stateless images published by digest after a
+vulnerability scan, configuration only through environment variables, liveness and readiness
+probes, and a homolog environment on K3s deployed by Argo CD from a GitOps repository
+([docs/deploy/homelab.md](docs/deploy/homelab.md)). What changes for a real deployment, using AWS
+as the example (GCP and Azure equivalents in parentheses):
 
-## Chat
+- **Runtime.** API and web server on ECS Fargate or EKS (Cloud Run / GKE, Container Apps / AKS)
+  behind an ALB with TLS. The API holds no state, so it scales horizontally on CPU and latency.
+  Today the backend container runs `alembic upgrade head` on start; with several replicas that
+  becomes a one-off migration job that runs before the rollout.
+- **Database.** Managed PostgreSQL with pgvector: RDS or Aurora (Cloud SQL / AlloyDB, Azure
+  Database for PostgreSQL Flexible Server). Keeping vectors, full-text and metadata in one
+  database is what lets retrieval stay a single SQL statement with the owner filter applied
+  inside it. The HNSW and GIN indexes are already in the schema; read replicas come before
+  any dedicated vector database.
+- **Indexing.** This is the part that does not survive production as is. Indexing runs as a
+  FastAPI background task in the API process, with the file in memory: a restart loses the job
+  (the document is marked failed on the next start) and a large burst competes with questions
+  for the same CPU. In production the upload goes to S3 (Cloud Storage, Blob Storage), a message
+  goes to SQS (Pub/Sub, Service Bus), and a separate worker service indexes it with retries,
+  backoff and a dead-letter queue, scaling on queue depth.
+- **LLM access.** The providers' rate limits and latency are the real bottleneck, not the API.
+  I would put a gateway in front of them (LiteLLM, or Bedrock / Vertex AI / Azure OpenAI as
+  managed endpoints) for provider fallback, per-tenant budgets and virtual keys. The ports
+  already isolate the app from the provider, so this is an adapter, not a rewrite.
+- **Security and tenancy.** Authentication through OIDC (Cognito, Identity Platform, Entra ID),
+  with the `owner_id` that documents and chunks already carry taken from the token instead of the
+  default owner. Secrets in Secrets Manager (Secret Manager, Key Vault), not in `.env`. Rate limits
+  move from nginx, which only sees the load balancer's address, to the API gateway or WAF per user.
+  The API docs are switched off with `API_DOCS_ENABLED=false`.
+- **Observability.** The app already exports OTLP; the destination is configuration. An
+  OpenTelemetry Collector with tail sampling keeps every error, every refused answer and the
+  slow or expensive runs, and sends them to X-Ray / CloudWatch (Cloud Trace, Azure Monitor) or a
+  Grafana stack. Alerts on error rate, refusal rate, p95 latency and cost per question, which the
+  spans already record.
+- **Build vs buy.** Bedrock Knowledge Bases, Vertex AI RAG Engine and Azure AI Search can replace
+  the whole ingestion and retrieval pipeline. They are a reasonable choice for a team that does
+  not want to own RAG. I kept my own pipeline because the citation guarantees and the evaluation
+  depend on controlling chunking, the relevance gate and how sources are built, and that is hard
+  to verify through a managed black box.
 
-Ask a question about the Ready documents. The answer cites its sources with `[n]` markers, or
-says "Not enough evidence" when the documents do not support one.
+## RAG and LLM approach
 
-```bash
-curl -s localhost:8000/chat -H 'Content-Type: application/json' \
-  -d '{"question": "What is the monthly coworking reimbursement limit?"}'
-# {"outcome":"answered","answer":"... US$ 250 per month [1].","sources":[{"number":1,
-#   "filename":"expense-policy.pdf","page":2,"passage":"..."}],"provider":"openai",...}
-```
+- **LLM.** I considered calling one provider SDK directly, using only LangChain's
+  `init_chat_model`, an AI gateway such as LiteLLM, and my own port. I chose a `ChatModelPort` with
+  OpenAI and Anthropic adapters, selected by `CHAT_PROVIDER` and `CHAT_MODEL`. The domain never
+  imports an SDK, switching provider is configuration, and contract tests run both adapters
+  against the same expectations offline. The evaluation ran on Anthropic `claude-haiku-5-5`: a
+  small, cheap model is enough when the answer must come from retrieved passages and the output
+  is structured. A gateway is the production step, not an MVP need.
+- **Embeddings.** OpenAI `text-embedding-3-small` (1536 dimensions), behind an `EmbeddingPort`.
+  Anthropic has no embeddings API, so embeddings stay on OpenAI whatever the chat provider is.
+  The adapter calls the OpenAI SDK directly instead of LangChain's `OpenAIEmbeddings`, which drops
+  the token usage I need for the cost. Changing the model changes the vector size and means
+  re-indexing everything, so it is a migration, not a setting.
+- **Vector database.** PostgreSQL with pgvector. Alternatives were a dedicated vector database or
+  a managed RAG service. One database holds documents, chunks, vectors and the full-text index, so
+  hybrid search, the owner filter and the Ready filter run in one query, with no extra service to
+  operate and the same engine I would run in the cloud.
+- **Orchestration.** LangChain v1 only where it helps: the chat call with structured output, for
+  both providers. Retrieval is one SQL statement (vector search, full-text search and Reciprocal
+  Rank Fusion), easier to reason about and to trace than a chain. I did not add a query planner:
+  free uploads have no taxonomy for it to plan over.
+- **Retrieval.** Hybrid, not vector only. Embeddings blur exact terms such as amounts, codes and
+  acronyms ("US$ 250"); full-text catches them, and RRF merges both rankings without calibrating
+  their scores. An LLM reranker exists behind `RERANK_ENABLED`; the evaluation kept it off.
+- **Prompt and context management.** Chunks of 1000 characters with 150 of overlap, each prefixed
+  with its file name and page or heading before embedding. Retrieved chunks reach the prompt
+  as labelled sources (`S1..Sn`), delimited and escaped, within a 3000-token budget; the answer is
+  capped at 800 tokens. The model returns a structured answer that cites labels, never free-form
+  references.
+- **Guardrails.** The app owns the filters (owner, Ready documents); the model never chooses them.
+  A relevance gate runs before the model: with no chunk that matched full-text or reached the
+  cosine floor, the answer is "Not enough evidence" and no chat call is made. Citations to labels
+  that were not in the prompt are dropped, and an answer with no valid citation becomes
+  insufficient evidence, so the app never shows an uncited claim. Document text is treated as
+  untrusted data: instructions inside an upload are not followed, and an adversarial set measures
+  it. Around it: file type, content and size checks, a PDF page and time budget, and rate limits on
+  questions and uploads. Provider failures are errors, never disguised as "not enough evidence".
 
-- Retrieval is hybrid, in PostgreSQL: vector search (pgvector, cosine) and full-text search
-  (any of the question's terms) fused with Reciprocal Rank Fusion, limited to the owner's Ready
-  documents. A chunk counts as evidence only if it matched the full-text search or its cosine
-  similarity is at least `MIN_RELEVANCE`; with no evidence the chat model is not called.
-- With `RERANK_ENABLED=true` one extra chat call keeps the `RERANK_TOP_N` most relevant chunks;
-  if it fails, the fused order is used and the response says `"reranked": false`.
-- Sources reach the prompt labelled `S1..Sn`, delimited and escaped, within
-  `CONTEXT_TOKEN_BUDGET`. The model cites labels; the backend drops labels that were not in the
-  prompt, renumbers the rest `1..n` and builds each source (file, page or heading, passage) from
-  the stored chunk. An answer with no valid citation becomes `insufficient_evidence`.
-- `outcome: "insufficient_evidence"` is a normal `200`: the answer is a fixed message, `sources`
-  is empty and `related_passage` may show the closest passage, without a citation number.
-- Errors: `400 empty_question`, `400 question_too_long`, `409 no_ready_documents`,
-  `502 chat_unavailable` (provider error or invalid structured output), `502
-  retrieval_unavailable` (the question could not be embedded), `504 chat_timeout`,
-  `503 database_unavailable`. Provider failures are never reported as insufficient evidence.
-- `CHAT_PROVIDER` (`openai` or `anthropic`) and `CHAT_MODEL` select the chat model; every
-  response carries `provider` and `model`. Logs and traces record outcome, counts, timings,
-  provider, model and tokens, never the question, prompt, sources or answer.
-- Chat calls go through LangChain; embeddings call the OpenAI SDK's `embeddings.create`
-  directly, because LangChain's `OpenAIEmbeddings` drops the token usage the cost needs
-  ([CWYD-28](https://goncalvesmarques.atlassian.net/browse/CWYD-28)).
-- Every request in [`docs/http/chat.http`](docs/http/chat.http) can be run against the Compose
-  stack; the expected evidence per case is in
-  [`backend/tests/fixtures/rag_cases.json`](backend/tests/fixtures/rag_cases.json). Business
-  rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-07..13).
+### Quality
 
-### Database schema
+A golden dataset of 13 questions over the fixture documents measures outcome accuracy, retrieval
+hit@k, expected-source rank (MRR), correct refusals and citation validity for four configurations,
+and a separate set of 8 prompt-injection cases measures resistance to instructions hidden in
+uploaded documents. Latest run (`anthropic` / `claude-haiku-5-5`, `text-embedding-3-small`):
 
-Tables and indexes are created by Alembic migrations (`backend/migrations/`). The backend
-container runs `alembic upgrade head` before starting the API; if the migration fails, the
-container exits instead of serving an outdated schema (`docker compose logs backend`). Outside
-Compose, run it yourself from `backend/`:
+| Configuration | Outcome accuracy | MRR | Correct refusals | Citation validity | Injection resistance | p50 latency | Chat cost (13 questions) |
+|---|---|---|---|---|---|---|---|
+| baseline (defaults) | 100% | 0.85 | 100% | 100% | 100% | 1.1 s | $0.0021 |
+| reranker on | 100% | 0.85 | 100% | 100% | 100% | 1.9 s | $0.0033 |
+| chunks of 120/20 | 100% | 0.78 | 100% | 89% | 100% | 1.2 s | $0.0021 |
+| `MIN_RELEVANCE` 0.45 | 100% | 0.85 | 100% | 100% | 100% | 1.2 s | $0.0020 |
 
-```bash
-uv run --env-file ../.env alembic upgrade head   # needs DATABASE_URL
-```
-
-The `vector` column size is fixed by the migration (1536) and must match `EMBEDDING_DIMENSIONS`.
-Changing `EMBEDDING_MODEL` or `EMBEDDING_DIMENSIONS` does not re-embed existing chunks, and
-re-uploading an indexed file returns it unchanged: recreate the database with
-`docker compose down -v` (a dimension change also needs a new migration) and upload the
-documents again.
-
-## RAG quality
-
-A golden dataset of 13 questions over the fixture documents measures retrieval hit@k, rank (MRR),
-correct refusals, citation validity, latency and chat cost for several configurations:
+The defaults stay: the reranker adds cost and latency without changing any outcome, smaller
+chunks split the evidence, and a stricter relevance floor changes nothing because unrelated
+questions are already refused before the chat model is called. Each configuration starts from
+the code defaults of the RAG settings, not from the local `.env`, so runs are comparable.
 
 ```bash
 docker compose --profile eval run --build --rm eval    # with the stack up; reports land in docs/eval/
 ```
 
-| Configuration | MRR | Refusals | Citation validity | p50 latency | Chat cost |
-|---|---|---|---|---|---|
-| baseline (defaults) | 0.93 | 100% | 100% | 1.4 s | $0.0020 |
-| reranker on | 0.93 | 100% | 100% | 2.3 s | $0.0032 |
-| chunks of 120/20 | 0.77 | 100% | 78% | 1.5 s | $0.0020 |
-| `MIN_RELEVANCE` 0.45 | 0.93 | 100% | 100% | 1.4 s | $0.0020 |
+Method, metrics and limits: [docs/eval/README.md](docs/eval/README.md); full numbers:
+[docs/eval/comparison.md](docs/eval/comparison.md). Business rules:
+[docs/domain-context.md](docs/domain-context.md) (DOM-20, DOM-21, DOM-29).
 
-The defaults stay: the reranker adds cost and latency without changing any outcome, smaller
-chunks split the evidence, and a stricter relevance floor changes nothing because unrelated
-questions are already refused before the chat model is called. Each configuration starts from
-the code defaults of the RAG settings, not from the local `.env`, so runs are comparable. Method,
-metrics and limits: [`docs/eval/README.md`](docs/eval/README.md). Business rules:
-[`docs/domain-context.md`](docs/domain-context.md) (DOM-20, DOM-21).
+### Observability
 
-## Tracing
+Every question and every indexing job produces an OpenTelemetry trace (exported to Jaeger with the
+`observability` Compose profile). `rag.chat` has one child span per real step
+(`retrieval.embed_query`, `retrieval.hybrid`, `rerank`, `answer_generation`) and records outcome,
+provider, model, tokens and estimated cost; `ingest.document` covers parse, chunk, embed and
+store. Span attributes never carry question, prompt, chunk or answer text. Each trace is found by
+the `X-Request-ID` the response returns.
 
-The API emits OpenTelemetry traces, off by default (`OTEL_TRACES_EXPORTER=none`). To see them in
-Jaeger, set `OTEL_TRACES_EXPORTER=otlp` in `.env` and start the stack with the `observability`
-profile:
+| Answered | Refused (not enough evidence) | Failed provider call | Indexing |
+|---|---|---|---|
+| ![answered](docs/evidence/CWYD-12/answered.png) | ![refused](docs/evidence/CWYD-12/refused.png) | ![failed](docs/evidence/CWYD-12/failed.png) | ![ingest](docs/evidence/CWYD-12/ingest.png) |
 
-```bash
-docker compose --profile observability up --build --wait   # Jaeger UI on http://localhost:16686
-```
+Setup and the full span list: [docs/operations.md](docs/operations.md#tracing).
 
-`OTEL_TRACES_EXPORTER=console` prints the spans to the backend's stdout instead
-(`docker compose logs backend`), with no extra service. Jaeger keeps traces in memory: they are
-lost when it restarts. Its OTLP receiver is reachable only from the Compose network.
+## Key technical decisions
 
-| Trace | Spans | Find it in Jaeger (service `cwyd-backend`) |
-| --- | --- | --- |
-| Question | `POST /chat` → `fastapi.endpoint` → `rag.chat` → `retrieval.embed_query`, `retrieval.hybrid`, `rerank` (with `RERANK_ENABLED`), `answer_generation` | Tag `app.request_id=<X-Request-ID of the response>` |
-| Ingestion | `POST /documents` → `fastapi.background_task` → `ingest.document` → `ingest.parse`, `ingest.chunk`, `ingest.embed`, `ingest.store` | Tag `app.document.id=<document id>` |
+- **React + Vite, not Next.js.** One screen, and FastAPI is already the server. SSR, server actions
+  and file routing would add decisions without value; Vite gives a static bundle any web server or
+  CDN can serve.
+- **Ports and adapters for the LLMs.** The decision with the most leverage: provider choice,
+  contract tests, cost tracking and a future gateway all hang off the two ports.
+- **Hybrid retrieval in the MVP.** The cheapest quality gain, with no new infrastructure. The
+  evaluation confirmed it: retrieval hit@k is 100%, the exact-term question included.
+- **Measure before adding.** The reranker was built behind a flag and the evaluation decided its
+  default (off: same outcomes, about 60% more chat cost and slower). The same run kept the chunk
+  size and the relevance floor.
+- **Insufficient evidence is a normal answer.** A `200` with a fixed message, not an error, and
+  shown without the red reserved for failures. Real failures (provider down, timeout) are errors
+  and are never reported as missing evidence.
+- **Asynchronous indexing, synchronous questions.** Upload answers `202` and the UI polls; the
+  question is a single request. The design handoff kept streaming out of the MVP, and a structured,
+  validated answer is simpler to guarantee without it.
+- **No login, but a schema ready for it.** Documents and chunks carry `owner_id` with a single
+  default owner, so adding users needs no data migration.
+- **Formats `.pdf`, `.md`, `.txt`.** PDF keeps page numbers and Markdown keeps headings, which is
+  what a citation points to. Scanned PDFs fail with a clear reason; OCR is out of scope.
+- **Contract first between backend and frontend.** The OpenAPI schema is exported from FastAPI,
+  the TypeScript types and the test mocks are generated from it, and CI fails when either is stale.
+- **Docker Compose as the validation path.** One command starts everything, and it uses the same
+  images CI scans and publishes.
+- **mypy strict over ty.** ty is faster but young; for an evaluated deliverable I preferred the
+  mature checker.
 
-- The trace root is the HTTP request span that FastAPI's native telemetry adds (route, status
-  code, total latency, plus `fastapi.*` operation spans); `rag.chat` and `ingest.document` are the
-  pipeline spans inside it. Indexing runs after the `202`, in the upload request's trace.
-  `/health*` probes are not traced. A client's `traceparent`, `tracestate` and `baggage` headers
-  are ignored: every request starts its own trace (`X-Request-ID` is the correlation key), and
-  FastAPI's telemetry exports no logs.
-- With `CHAT_PROVIDER=anthropic`, the Anthropic SDK adds its own `anthropic.messages.create`
-  spans under `rerank` and `answer_generation` (metadata only by default; they include the
-  Anthropic organization and workspace ids). Never set
-  `ANTHROPIC_OPEN_TELEMETRY_TRACES_CONTENT_MODE=content`: it would put prompts and answers on
-  those spans, bypassing `CAPTURE_CONTENT`.
-- Retrieval is one span: vector search, full-text search and the fusion run as a single SQL
-  statement, so its counts (returned, full-text matched, top similarity) are attributes of
-  `retrieval.hybrid`.
-- `rag.chat` records `app.outcome` (`answered`, `refused` or `error`), provider and
-  model, input/output tokens and `app.cost.usd`, the estimated cost from
-  [`backend/app/prices.yaml`](backend/app/prices.yaml) (USD per million tokens, matched by
-  model-name prefix). The totals include the query embedding (`retrieval.embed_query` records its
-  model and tokens). A model missing from the table records no cost; a question where no call
-  reported usage records no tokens and no cost, never 0. The RAG evaluation reads the same table.
-- `ingest.embed` records the embedding model, input tokens and `app.cost.usd` of an indexing
-  job, and a successful job logs one info line with the document id, chunk count, embedding
-  tokens and estimated cost (null when unknown).
-- A failed step has error status and `error.type` (the exception class), never the exception
-  message or stack trace.
-- Span attributes never carry question, prompt, chunk or answer text. `CAPTURE_CONTENT=true` adds
-  that text as span events for local debugging; keep it `false` anywhere real documents are used.
-- Every request in [`docs/http/observability.http`](docs/http/observability.http) produces one of
-  these traces; screenshots of each are in [`docs/evidence/CWYD-12/`](docs/evidence/CWYD-12/).
-  Business rules: [`docs/domain-context.md`](docs/domain-context.md) (DOM-22..24).
+## Engineering standards
 
-## Security headers
+**Followed**
 
-The web server ([`frontend/nginx/default.conf.template`](frontend/nginx/default.conf.template)) sends
-`X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin` and
-`X-Frame-Options: DENY` and `Permissions-Policy: camera=(), microphone=(), geolocation=(),
-payment=(), usb=()` on every response, errors included, and does not announce its version
-(`Server: nginx`). The app itself also gets a
-`Content-Security-Policy` that allows only same-origin scripts, styles, fonts and requests and
-forbids framing. API responses under `/api/` do not: JSON needs no CSP, and it would block
-Swagger UI's inline script and CDN assets. HSTS is set by the ingress that ends TLS (CWYD-7).
-Check the headers with `curl -I http://localhost:8080/`
-([`docs/http/security.http`](docs/http/security.http)).
+- Clean Architecture boundaries: domain and use cases import no provider SDK or framework; the
+  composition root wires adapters.
+- Tests where they pay off, with no coverage target: unit tests for parsing, chunking, prompts,
+  the relevance gate and citation building; integration tests against real PostgreSQL with
+  pgvector through testcontainers, never SQLite, including hybrid retrieval and fusion; declared
+  fakes for the LLM and embeddings; contract tests for both chat adapters; Vitest, Testing Library
+  and MSW on the frontend.
+- Strict static checks: ruff and mypy strict on the backend, ESLint and `tsc` on the frontend.
+- Business rules written down with IDs ([docs/domain-context.md](docs/domain-context.md)) and
+  referenced in the code where they apply.
+- Privacy by default: no question, prompt, chunk or answer text in logs or span attributes.
+- CI on every pull request with one required check, image scanning (Trivy), a dependency audit
+  whose exceptions expire, SHA-pinned actions and Dependabot. Protected `main` and `development`,
+  squash merges, a CHANGELOG entry per card.
+- Evidence per card: runnable `.http` files and screenshots or command output in
+  [docs/evidence/](docs/evidence/), and a human run of the Compose stack before a card is done.
 
-The API docs (`/docs`, `/redoc`, `/openapi.json`) are on by default for local and homolog use.
-Production sets `API_DOCS_ENABLED=false`, which makes the three routes return `404`; the
-committed `frontend/openapi.json` export does not depend on them. Swagger UI works both
-through the web server (`http://localhost:8080/api/docs`, the only entry point in homolog) and
-directly (`http://localhost:8000/docs`): nginx sends `X-Forwarded-Prefix: /api`, and when it
-equals `API_ROOT_PATH` the API serves the page and spec as seen from the browser
-(`/api/openapi.json`, `servers: [{"url": "/api"}]`), so "Try it out" calls `/api/...`. Any other
-value of the header is ignored. Direct calls carry no header and keep the plain paths.
+**Skipped, on purpose or for time**
 
-## Rate limits
+- Browser end-to-end tests (Playwright). `scripts/smoke.sh` covers upload to answer over HTTP, and
+  the UI has component tests, but no test drives the real browser against the real stack.
+- Authentication and multi-tenancy (the schema is ready, the feature is not).
+- A coverage threshold: deliberate, it rewards the wrong tests.
+- Load and soak testing; the scaling notes above are reasoning, not measurements.
+- Streaming answers, OCR and a durable job queue (see the last section).
 
-The web server limits each client address (DOM-27): questions (`POST /api/chat`) to 10 per
-minute with a burst of 5 and at most 2 at a time, uploads (`POST /api/documents`) to 6 per minute
-with a burst of 3. Listing and polling documents is not limited. A request over a limit gets
-`429` with `{"code":"rate_limited","detail":"Too many requests. Try again in a minute."}`, a
-`Retry-After: 60` header and the security headers above; the app shows the message. Direct calls
-to the API (`:8000`) are not limited.
+## How I used AI tools
 
-Change them in `.env` and restart the web server (`docker compose up -d frontend`):
+I used Claude Code throughout, inside a workflow I built for myself (the `dev-workflow` plugin)
+and with the Jira cards as the specification:
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `RATE_LIMIT_CHAT` | `10r/m` | Questions per client address (nginx rate: `r/s` or `r/m`) |
-| `RATE_LIMIT_CHAT_BURST` | `5` | Extra questions let through at once before the rate applies |
-| `RATE_LIMIT_CHAT_CONNECTIONS` | `2` | Questions in progress at the same time |
-| `RATE_LIMIT_UPLOAD` | `6r/m` | Uploads per client address |
-| `RATE_LIMIT_UPLOAD_BURST` | `3` | Extra uploads let through at once |
+- **Plan first, with a human checkpoint.** Each card started with `/task CWYD-N`, which reads the
+  card and writes a brief (problem, scope, risks, plan). Nothing was implemented until I approved
+  it.
+- **Who wrote what.** I wrote the core backend (ingestion and answering) myself. For the frontend,
+  which is my weakest area, and for cards such as the evaluation harness, tracing, CI, supply
+  chain and the homelab manifests, I let the agent write the code after approving its plan, and
+  reviewed it.
+- **Automated gates before every PR.** `/docs-sync` keeps documentation in step with the diff, a
+  definition-of-done checklist is verified item by item, and `/code-review-task` runs lint, types
+  and tests and reviews the diff, with its verdict tied to the commit it reviewed.
+- **Context, not prompts.** A short `CLAUDE.md` with the non-negotiable constraints, per-component
+  `CLAUDE.md` files, path-scoped rules in `.claude/rules/`, and two MCP servers (read-only Postgres
+  and Context7 for current library docs).
+- **Skills are third-party code.** I preferred skills published by the maintainer of each tool
+  and read every one before adopting it. That review found real problems: a skill that ran the
+  latest `shadcn` CLI from npm as soon as it loaded, one that pre-approved arbitrary JavaScript
+  and documented saving browser cookies, and one that rewrote `PATH` for the whole session. They
+  were fixed or rejected ([docs/skills-curation.md](docs/skills-curation.md)).
+- **Where I did not delegate.** Product and architecture decisions, the choice of what to
+  measure, and reading the evaluation results. Commits carry no AI attribution; this section is
+  where its use is disclosed.
 
-The key is the address nginx sees. Behind an ingress or load balancer (CWYD-7; `real_ip` is
-CWYD-20) that is the
-proxy, so every user shares one limit: the web server then needs `real_ip_header
-X-Forwarded-For` with `set_real_ip_from` listing only the trusted proxy CIDRs (never
-`0.0.0.0/0`, or clients can spoof the header). That is not configured here. Requests in
-[`docs/http/rate-limit.http`](docs/http/rate-limit.http); real output in
-[`docs/evidence/CWYD-18-rate-limit.md`](docs/evidence/CWYD-18-rate-limit.md).
+## What I would do differently with more time
 
-## Troubleshooting
+**Product**
 
-**`docker compose up --wait` fails and the backend exits with `Invalid configuration`.**
-The API validates its configuration at startup and names every variable that is missing or
-empty:
+- **Login and conversation history.** Today the conversation lives only in the browser and is
+  lost on reload. With users, conversations are stored and can be reopened.
+- **Context per user.** Each user gets their own documents. The schema already carries `owner_id`
+  on documents and chunks, and retrieval already filters by it; the work is authentication and
+  taking the owner from the token instead of the single default owner.
+- **Control over the context.** Remove a document, or leave it out of the search without deleting
+  it. Today a document can only be added.
+- **Document history.** What was uploaded, replaced or removed, and when, so it is clear which
+  documents an answer could have used.
+- **Sharing.** Share a conversation, or a whole document collection, with another user so they
+  can build on the same context instead of uploading everything again.
+- **Usage and performance views.** Collection size (documents, chunks, tokens indexed) and the
+  metrics the traces already record (latency per step, answered vs. refused, cost per question)
+  shown in the app, not only in Jaeger or Grafana.
 
-```
-app.config.ConfigurationError: Invalid configuration:
-  - CHAT_MODEL: Field required
-  - OPENAI_API_KEY: Field required
-Set these variables in .env (see .env.example) and restart.
-```
+**Engineering**
 
-Fill in the listed variables in `.env` and run `docker compose up --build --wait` again.
-`docker compose logs backend` shows the message after the fact.
+- **A durable indexing pipeline.** Object storage, a queue and separate workers instead of
+  background tasks in the API process. It is the first thing to change before real traffic.
+- **Streaming answers.** Server-sent events for the text, with the sources sent as a final,
+  separate event once they are validated: perceived latency matters in a chat UI, but citations
+  must not be shown before they are checked.
+- **A larger and harder evaluation.** Thirteen questions over small, fictitious documents prove
+  the mechanics, not the quality on real corpora. I would add real documents, longer ones and
+  near-duplicates, and measure a vector-only baseline, which I never isolated.
+- **Better retrieval where the evaluation shows a need:** a cross-encoder or managed reranker,
+  MMR for diverse sources, and detection of conflicting versions of the same policy.
+- **Browser end-to-end tests** for the two main flows, and OCR for scanned PDFs.
+- **An LLM gateway and tail sampling** in the observability pipeline, as described above.
 
-**A value in `.env` is not picked up as expected.** Compose does not strip inline comments in
-env files: `CHAT_PROVIDER=openai # note` sets the whole string. Keep comments on their own lines.
+## Further reading
 
-**`ports are not available` for 5432, 8000 or 8080.** Another process (a local PostgreSQL, an
-editor port forward) holds the port. Stop it, or change the host side of the mapping in
-`compose.yaml`.
-
-**The backend exits right after start with an Alembic error.** The schema migration runs before
-the API and failed (database unreachable, or a schema changed by hand). `docker compose logs
-backend` shows the cause; for a local database you do not need to keep, `docker compose down -v`
-and start again.
-
-**`pgvector extension missing` after editing `db/init/`.** Init scripts run only on an empty
-volume. Recreate it with `docker compose down -v`.
-
-## Development
-
-The repository ships a dev container (`.devcontainer/`) with Python 3.14, uv, Node 26 and access
-to the host Docker daemon. Open the folder in VS Code or Cursor and choose *Reopen in Container*;
-dependencies are installed on creation.
-
-```bash
-# backend/
-uv run ruff check . && uv run ruff format --check .   # lint
-uv run mypy .                                          # typecheck (strict)
-uv run pytest                                          # unit + integration (testcontainers)
-uv run pytest -m "not integration"                     # fast loop without Docker
-RUN_LIVE_TESTS=1 uv run --env-file ../.env pytest -m live  # opt-in: real OpenAI/Anthropic calls
-uv run --env-file ../.env uvicorn app.main:app --reload  # API on :8000; uv loads ../.env, the app does not
-
-# frontend/
-npm run lint && npm run typecheck && npm test
-npm run dev                                            # Vite on :5173, /api → BACKEND_URL (default :8000)
-npm run tokens:audit                                   # design tokens: no drift, no hardcoded values
-npm run api:types                                      # openapi.json → src/api/schema.d.ts
-VITE_API_MOCKS=true npm run dev                        # the app on MSW mocks, no backend needed
-```
-
-The frontend is typed from the API contract: `backend/scripts/export_openapi.py` writes the
-FastAPI schema to `frontend/openapi.json` without starting the app, `npm run api:types` turns it
-into `frontend/src/api/schema.d.ts` (both committed), and every call goes through the
-openapi-fetch client in `frontend/src/api/client.ts` on the relative `/api` path. After changing
-anything under `backend/app/api/`, regenerate both:
-`cd backend && uv run python -m scripts.export_openapi && npm --prefix ../frontend run api:types`.
-The MSW handlers used by the Vitest suite and by `VITE_API_MOCKS=true` are typed from the same
-schema, so a contract change breaks the frontend typecheck instead of the running app.
-`openapi-typescript` declares a TypeScript 5 peer; an `overrides` entry in `frontend/package.json`
-runs it on the project's TypeScript 6.
-
-The UI is built with Tailwind v4 and shadcn/ui on a design system extracted from the design
-handoff: tokens live in `docs/design-tokens.json` (primitive → semantic → component), the theme in
-`frontend/src/styles/theme.css` is generated from it (`npm run tokens:apply`), and the audit fails
-on a missing token, a theme value that drifted or a hardcoded color, size or radius in `src/`.
-With `npm run dev`, `http://localhost:5173/preview.html` shows every handoff screen composed from
-the components with static data (dev only, not part of the build).
-
-The chat adapter contract tests (`tests/contract/`) run both the OpenAI and the Anthropic
-adapters offline against a local HTTP stub of the providers' APIs. The `live` tests call the
-real APIs and are skipped unless `RUN_LIVE_TESTS=1`; they also need the provider keys and
-`LIVE_OPENAI_CHAT_MODEL` / `LIVE_ANTHROPIC_CHAT_MODEL` (each provider is skipped without them).
-
-Integration tests build `db/Dockerfile` and start it with testcontainers, so they need a Docker
-daemon but not the Compose stack. To run the API outside Compose, set `DATABASE_URL` (see
-`.env.example`). From the dev container, the Compose services are reached at
-`host.docker.internal`, e.g. `BACKEND_URL=http://host.docker.internal:8000 npm run dev`. This
-works on Docker Desktop (macOS, Windows/WSL), which forwards `host.docker.internal` to the host
-loopback. On native Linux Docker Engine it resolves to the bridge gateway, which cannot reach
-ports bound to `127.0.0.1`: run the Vite dev server on the host, or bind the ports you need to
-the gateway address in a local `compose.override.yaml` (never commit it).
-
-## CI and images
-
-`.github/workflows/ci.yml` runs on every pull request to `development` or `main`:
-
-| Job | What it does |
-| --- | --- |
-| `changes` | Path filter: `backend/**` and `db/**` select the backend, `frontend/**` the frontend (a change to the workflow selects both) |
-| `backend checks` | The backend lint, typecheck and test commands from [Development](#development), plus a check that `frontend/openapi.json` matches the API |
-| `frontend checks` | The frontend lint, typecheck and test commands from [Development](#development), plus a check that `src/api/schema.d.ts` matches `openapi.json` |
-| `skills drift` | Always runs. Fails when a generated testing guide's copy in `.claude/skills/` drifts from its source ([Skills curation](docs/skills-curation.md#generated-skills)) |
-| `dependency audit` | Always runs. Scans `backend/uv.lock` and `frontend/package-lock.json` with [osv-scanner](https://github.com/google/osv-scanner); any known advisory fails the job unless it was [accepted after review](#accepting-a-reviewed-advisory) |
-| `image (<component>)` | Builds the component's Dockerfile and scans it with Trivy; a fixable HIGH or CRITICAL vulnerability fails the job |
-| `publish (<component>)` | Pushes the scanned image to GHCR (never on pull requests) |
-| `ci-gate` | Always reports. Fails when any job failed or was cancelled; a job skipped by the path filter passes |
-
-`ci-gate` is the only required status check on `development` and `main`, so a PR that touches
-only the frontend is not left waiting for backend checks that never run. The path filter applies
-to pull requests only; pushes, tags and manual runs check both components.
-
-To pass the scan, the backend image applies pending Debian security updates and removes the
-system pip (the app runs from the uv virtualenv), and the frontend image uses the mainline
-`nginx-unprivileged:1.31-alpine` with pending Alpine updates, because the 1.30 stable image still
-ships nginx with fixable vulnerabilities. CI passes a daily `UPGRADE_EPOCH` build argument, so the
-upgrade layer is rebuilt once a day instead of being served from the build cache.
-
-**Publishing.** Pushes to `development` and `main`, `v*.*.*` tags and manual runs (*Actions →
-CI → Run workflow* on `development` or `main`) build both images and publish them only when
-every check and both scans passed: one failure publishes nothing. The image that is pushed is
-the one that was scanned. Images:
-
-```
-ghcr.io/victorgmrqs/chat-with-your-docs/backend:sha-<short commit>
-ghcr.io/victorgmrqs/chat-with-your-docs/frontend:sha-<short commit>
-```
-
-Each image also gets the branch name as a moving tag (`development`, `main`) and the version on
-a release tag (`1.2.0`). Each publish job writes the digest in the run summary. Deploy by
-digest: it is the only immutable reference, since a later rebuild of the same commit (a release
-tag, or the daily OS-upgrade refresh) pushes a new image under the same `sha-` tag. A burst of
-pushes to `development` runs only the first and the last commit; the ones in between get no
-images. The *Run workflow* button appears once `ci.yml` is on `main`, the default branch.
-
-**Supply chain.** Third-party actions are pinned by full commit SHA, with the release in a
-comment, and the repository's Actions policy requires SHA pinning. The audit job downloads the
-osv-scanner release binary and checks it against a SHA-256 pinned in `ci.yml`. That version is
-the one pin Dependabot does not cover: bump it by hand (steps in the `ci.yml` comment).
-Dependabot (`.github/dependabot.yml`) checks uv, npm, Docker base images (Dockerfiles and
-`compose.yaml`) and GitHub Actions every Monday and opens PRs against `development`: minor and
-patch updates grouped into one PR per ecosystem, majors one PR each, each release proposed only
-after Dependabot's default 3-day cooldown. These PRs go through the same checks and review as
-any other. Dependabot *security* updates stay off because they always target `main`; the audit
-job blocks a vulnerable dependency instead. Dependabot reads its configuration from `main`, so
-it starts after the release that brings this file there.
-
-#### Accepting a reviewed advisory
-
-When an advisory cannot be fixed yet (no patched release) or does not apply, add it to
-`osv-scanner.toml` in the same PR that explains why:
-
-```toml
-[[IgnoredVulns]]
-id = "GHSA-xxxx-xxxx-xxxx"          # the ID the audit job printed
-ignoreUntil = 2027-02-01            # at most 90 days away
-reason = "Why it does not apply or cannot be fixed yet, and what ends the exception."
-```
-
-`scripts/check-audit-ignores.py` fails the job when an entry has no reason, no `ignoreUntil`, a
-date more than 90 days away, or a date already past. An exception therefore expires, and the
-advisory has to be fixed or reviewed again.
-
-## Homelab deploy
-
-The published images also run on a private K3s homelab (homolog only), synced by Argo CD from a
-separate GitOps repository. Topology, deploy, verification and rollback:
-[docs/deploy/homelab.md](docs/deploy/homelab.md). `scripts/smoke.sh <base-url>` runs the end-to-end
-smoke test (readiness, upload, two-source answer, insufficient evidence) against any environment,
-including `http://localhost:8080`.
-
-## Repository layout
-
-```
-backend/    FastAPI app (app/{domain,application,adapters,api}), Alembic migrations, tests and
-            test fixtures (scripts/generate_fixtures.py), OpenAPI export
-            (scripts/export_openapi.py), RAG evaluation (eval/), Dockerfile
-frontend/   React + Vite SPA (src/components, src/hooks, src/api with the generated schema,
-            src/mocks for MSW, src/styles/theme.css), openapi.json, token scripts
-            (scripts/tokens), dev-only design preview (preview.html), nginx template, Dockerfile
-db/         PostgreSQL image: init scripts for the pgvector extension; the `local` target used
-            by Compose also creates the read-only role for the Postgres MCP server
-docs/       design tokens, domain rules, HTTP evidence, evaluation reports, curation notes,
-            homelab deploy runbook (deploy/)
-scripts/    end-to-end smoke test (smoke.sh), CI helpers, docs guard
-.github/    CI workflow (checks, image scan, GHCR publishing) and the PR template
-compose.yaml, .env.example
-```
+| Topic | Where |
+|---|---|
+| Configuration, API behaviour, tracing, security headers, rate limits, troubleshooting | [docs/operations.md](docs/operations.md) |
+| Dev container, tests, API contract, design system, CI and images, repository layout | [docs/development.md](docs/development.md) |
+| Business rules (DOM-xx) | [docs/domain-context.md](docs/domain-context.md) |
+| RAG evaluation | [docs/eval/](docs/eval/README.md) |
+| Homelab deploy (K3s + Argo CD) | [docs/deploy/homelab.md](docs/deploy/homelab.md) · [evidence](docs/evidence/CWYD-7-homelab.md) |
+| Evidence per card (screenshots, command output) | [docs/evidence/](docs/evidence/) · requests in [docs/http/](docs/http/) |
+| AI skills curation | [docs/skills-curation.md](docs/skills-curation.md) |
+| Change history | [CHANGELOG.md](CHANGELOG.md) |

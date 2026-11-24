@@ -28,7 +28,7 @@ paths:
   builds it inside the `lifespan` (settings are loaded there, never at import), stores it on
   `app.state.container` and disposes the engine on shutdown. Routes reach it only through
   `Depends(get_container)`; nothing else reads `app.state`.
-- New settings go in `app/config.py` and in `.env.example` + README in the same change.
+- New settings go in `app/config.py` and in `.env.example` + `docs/operations.md` (configuration table) in the same change.
 - Async first: `async def` everywhere I/O happens; blocking SDK or parsing calls run in
   `asyncio.to_thread` inside the adapter.
 - Background indexing jobs get their own resources from the composition root; they never reuse

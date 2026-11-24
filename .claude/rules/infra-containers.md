@@ -27,7 +27,7 @@ paths:
   `BACKEND_URL` via envsubst templates), so one image serves Compose, homelab and cloud.
 - Secrets only from `.env` (optional `env_file`, never committed). Compose defaults are allowed
   only for local-only values (`POSTGRES_*`). Every new variable is added to `.env.example` and
-  the README configuration table in the same change.
+  the configuration table in `docs/operations.md` in the same change.
 - Env files do not strip inline comments: comments stay on their own lines.
 - `db/Dockerfile` has two targets: `runtime` (default; `db/init/`, extensions only) and `local`
   (Compose; adds `db/init-local/`, the read-only MCP role). Dev-only objects never go in

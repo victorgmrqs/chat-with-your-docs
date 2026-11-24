@@ -40,7 +40,7 @@ commands:
   test: "(cd backend && uv run pytest) && npm --prefix frontend test"
   coverage: ""                   # no gate, see quality_gates
   build: "docker compose build"
-  e2e: ""                        # TODO(CWYD-8): Playwright
+  e2e: ""                        # no browser E2E; scripts/smoke.sh covers the HTTP path
 
 quality_gates:
   review_pack: python-async      # backend (FastAPI/LangChain) carries most of the risk.
@@ -58,25 +58,25 @@ context_files:                   # always loaded in /task phase 1 (≤4)
 
 docs_map:
   - if_diff_touches: "compose*.y*ml"
-    update: ["README.md"]        # Quick setup section
+    update: ["README.md", "docs/operations.md"]   # Quick setup + operations reference
     severity: blocker
   - if_diff_touches: ".env.example"
-    update: ["README.md"]
+    update: ["docs/operations.md"]               # configuration table (README lists only the required ones)
     severity: blocker
   - if_diff_touches: "backend/pyproject.toml"
-    update: ["README.md"]        # stack / setup
+    update: ["docs/development.md"]              # stack / local workflow
     severity: warning
   - if_diff_touches: "frontend/package.json"
-    update: ["README.md"]
+    update: ["docs/development.md"]
     severity: warning
   - if_diff_touches: "backend/app/config.py"
-    update: [".env.example", "README.md"]   # every setting is documented in both
+    update: [".env.example", "docs/operations.md"]   # every setting is documented in both
     severity: warning
   - if_diff_touches: "db/**"
-    update: ["README.md"]
+    update: ["docs/operations.md"]
     severity: warning
   - if_diff_touches: "**/Dockerfile"
-    update: ["README.md"]
+    update: ["docs/development.md"]              # CI and images
     severity: warning
   - if_diff_touches: "backend/app/api/**"
     # Contract-first: `uv run python -m scripts.export_openapi` (backend/) then

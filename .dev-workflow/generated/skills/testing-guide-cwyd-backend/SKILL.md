@@ -87,7 +87,7 @@ file in `artifacts/`. Mock strategies, file conventions and gotchas are in `refe
 
 | Artifact created or changed | Required tests | Guide |
 |---|---|---|
-| Setting in `app/config.py` | Unit: rule branches + message; `.env.example`/README updated | `artifacts/settings.md` |
+| Setting in `app/config.py` | Unit: rule branches + message; `.env.example` + `docs/operations.md` updated | `artifacts/settings.md` |
 | Route (`@router.*` function) | HTTP: status codes, validation wiring, error mapping | `artifacts/routes.md` |
 | Postgres adapter (`app/adapters/*`, SQL) | Integration: real pgvector via testcontainers | `artifacts/postgres-adapters.md` |
 | Composition root / `create_app` change | HTTP: lifespan builds; one route exercises the new wiring | `artifacts/composition-root.md` |

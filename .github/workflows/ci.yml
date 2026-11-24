@@ -1,5 +1,5 @@
 # CI and image publishing (CWYD-6). Triggers, publish rules and the required check are described
-# in README § "CI and images".
+# in docs/development.md § "CI and images".
 #
 # changes ─┬─ backend ──┐
 #          └─ frontend ─┴─ image (build + scan, per component) ── publish (GHCR) ─┐
@@ -100,7 +100,7 @@ jobs:
         run: |
           uv run python -m scripts.export_openapi
           git diff --exit-code -- ../frontend/openapi.json \
-            || { echo "::error::frontend/openapi.json is stale: regenerate it (README § Development)"; exit 1; }
+            || { echo "::error::frontend/openapi.json is stale: regenerate it (docs/development.md § Local workflow)"; exit 1; }
 
   frontend:
     name: frontend checks
@@ -133,7 +133,7 @@ jobs:
         run: |
           npm run api:types
           git diff --exit-code -- src/api/schema.d.ts \
-            || { echo "::error::src/api/schema.d.ts is stale: regenerate it (README § Development)"; exit 1; }
+            || { echo "::error::src/api/schema.d.ts is stale: regenerate it (docs/development.md § Local workflow)"; exit 1; }
 
   skills-drift:
     name: skills drift
@@ -150,7 +150,7 @@ jobs:
   dependency-audit:
     name: dependency audit
     # Always runs (no path filter): a new advisory against an unchanged lockfile must block too.
-    # Accepting a reviewed advisory: osv-scanner.toml (README § "CI and images").
+    # Accepting a reviewed advisory: osv-scanner.toml (docs/development.md § "CI and images").
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:

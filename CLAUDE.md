@@ -16,7 +16,8 @@ Architecture: React SPA → FastAPI → PostgreSQL + pgvector, LLMs behind ports
 - Backend: Python, FastAPI + LangChain v1, uv + ruff + mypy strict (`backend/`)
 - Database: PostgreSQL + pgvector (hybrid search: vector + full-text, RRF)
 - LLM: `ChatModelPort` (OpenAI, Anthropic adapters); `EmbeddingPort` (OpenAI)
-- Tests: pytest (real Postgres via testcontainers), Vitest + Testing Library + MSW, Playwright
+- Tests: pytest (real Postgres via testcontainers), Vitest + Testing Library + MSW; no browser E2E
+  (`scripts/smoke.sh` covers upload → answer over HTTP)
 - Runtime: Docker Compose is the main validation path
 
 ## Commands
@@ -69,4 +70,5 @@ docker compose up --build --wait   # full stack: web :8080, API :8000, db :5432
 - Working guide and decision log (local, untracked): `_docs/playbook.md`, `_docs/decision-log.md`
 - Challenge statement: `_docs/challenge.md`
 - Design handoff: `_docs/design/` (PNGs win over `.dc.html` on divergence)
+- Operations reference: `docs/operations.md` · development and CI: `docs/development.md`
 - RAG eval reports: `docs/eval/` · HTTP evidence: `docs/http/`

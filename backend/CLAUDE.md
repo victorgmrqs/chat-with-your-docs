@@ -7,7 +7,7 @@
   app factory `app/main.py` (`create_app`, settings loaded in the lifespan, not at import).
 - Configuration: `app/config.py` (pydantic-settings). `load_settings()` raises
   `ConfigurationError` naming every missing or empty variable. New settings go there and in
-  `.env.example` + README.
+  `.env.example` + `docs/operations.md`.
 - Health: `GET /health` (liveness, no I/O) and `GET /health/ready` (database + pgvector +
   embedding column dimension, 503 otherwise). Routes have no `/api` prefix; nginx and the
   Vite proxy strip it.

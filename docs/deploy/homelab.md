@@ -11,7 +11,7 @@ deployed: it needs authentication first ([CWYD-22](https://goncalvesmarques.atla
 | Manifests | `homelab-gitops`: `base/cwyd/` and `overlays/homolog/cwyd/` |
 | Argo CD Application | `homelab-homolog` (branch `development`, path `overlays/homolog`, auto-sync with prune and self-heal) |
 | Namespace | `homolog` |
-| Images | `ghcr.io/victorgmrqs/chat-with-your-docs/{backend,frontend}:sha-<7>`, the tags CI publishes ([CI and images](../../README.md#ci-and-images)) |
+| Images | `ghcr.io/victorgmrqs/chat-with-your-docs/{backend,frontend}:sha-<7>`, the tags CI publishes ([CI and images](../development.md#ci-and-images)) |
 
 ## Topology
 
