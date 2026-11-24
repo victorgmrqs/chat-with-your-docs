@@ -9,7 +9,10 @@ import type { ReactNode } from 'react'
 export function AppLayout({ sidebar, children }: { sidebar: ReactNode; children: ReactNode }) {
   return (
     <div className="flex min-h-dvh flex-wrap bg-background text-foreground md:h-dvh md:flex-nowrap">
-      <div className="scroll-area flex flex-[1_1_300px]">{sidebar}</div>
+      {/* 24rem: the handoff column width (its 300px basis grew to ~384px around the file names).
+          min-w-0: below md the column is no scroll container, so without it a long file name
+          sets its minimum width and the page scrolls sideways (CWYD-29). */}
+      <div className="scroll-area flex min-w-0 flex-[1_1_24rem]">{sidebar}</div>
       <main className="flex min-w-0 flex-[999_1_560px] flex-col md:min-h-0">{children}</main>
     </div>
   )
